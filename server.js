@@ -41,8 +41,8 @@ async function fetchZohoImage(fileId) {
         await refreshZohoToken();
     }
 
-    // Use the standard WorkDrive download endpoint
-    var imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+    // Use the SAME URL format as the CSV (download-accl.zoho.com)
+    var imageUrl = 'https://download-accl.zoho.com/v1/workdrive/download/' + fileId;
     var response = await fetch(imageUrl, {
         headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
     });
