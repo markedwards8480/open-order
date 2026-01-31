@@ -267,8 +267,13 @@ app.get('/api/orders', async function(req, res) {
         var paramIndex = 1;
 
         if (status && status !== 'All') {
-            conditions.push('status = $' + paramIndex++);
-            params.push(status);
+            // "Open" includes both Open and Partial statuses
+            if (status === 'Open') {
+                conditions.push("status IN ('Open', 'Partial')");
+            } else {
+                conditions.push('status = $' + paramIndex++);
+                params.push(status);
+            }
         }
         if (customer) {
             conditions.push('customer = $' + paramIndex++);
@@ -369,8 +374,12 @@ app.get('/api/orders/by-so', async function(req, res) {
         var paramIndex = 1;
 
         if (status && status !== 'All') {
-            conditions.push('status = $' + paramIndex++);
-            params.push(status);
+            if (status === 'Open') {
+                conditions.push("status IN ('Open', 'Partial')");
+            } else {
+                conditions.push('status = $' + paramIndex++);
+                params.push(status);
+            }
         }
         if (customer) {
             conditions.push('customer = $' + paramIndex++);
@@ -610,8 +619,11 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
                 var status = getValue(values, colMap.status) || 'Open';
                 var imageUrl = getValue(values, colMap.image_url) || '';
 
-                // Normalize status
-                if (status.toLowerCase().includes('invoice') || status.toLowerCase().includes('shipped') || status.toLowerCase().includes('complete')) {
+                // Normalize status - Open, Partial, Invoiced
+                var statusLower = status.toLowerCase();
+                if (statusLower.includes('partial')) {
+                    status = 'Partial';
+                } else if (statusLower.includes('invoice') || statusLower.includes('shipped') || statusLower.includes('complete') || statusLower.includes('billed')) {
                     status = 'Invoiced';
                 } else {
                     status = 'Open';
@@ -910,7 +922,8 @@ function getHTML() {
     html += '.filter-group{display:flex;align-items:center;gap:0.5rem}.filter-label{font-size:0.8125rem;color:#86868b;font-weight:500}';
     html += '.filter-select{padding:0.5rem 2rem 0.5rem 1rem;border:1px solid #d2d2d7;border-radius:8px;font-size:0.875rem;background:white;color:#1e3a5f;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%2386868b\' d=\'M6 8L2 4h8z\'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.75rem center}.filter-select:focus{outline:none;border-color:#0088c2}';
     html += '.filter-select.active{border-color:#0088c2;background-color:rgba(0,136,194,0.05)}';
-    html += '.status-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px}.status-btn{padding:0.5rem 1.25rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}.status-btn.active{background:#0088c2;color:white}';
+    html += '.status-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px}.status-btn{padding:0.5rem 1.25rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}';
+    html += '.status-btn.active{color:white}.status-btn[data-status="Open"].active{background:#34c759}.status-btn[data-status="Invoiced"].active{background:#8e8e93}.status-btn[data-status="All"].active{background:#0088c2}';
     html += '.clear-filters{padding:0.5rem 1rem;border:none;background:transparent;color:#ff3b30;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:6px}.clear-filters:hover{background:rgba(255,59,48,0.1)}';
     html += '.view-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px;margin-left:auto}.view-btn{padding:0.5rem 1rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}.view-btn.active{background:#1e3a5f;color:white}';
 
@@ -925,7 +938,9 @@ function getHTML() {
     html += '.timeline-month{padding:0.5rem 1rem;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:0.8125rem;font-weight:500;transition:all 0.2s;border:1px solid #e0e0e0;background:white;color:#6e6e73}';
     html += '.timeline-month:hover{border-color:#0088c2;color:#0088c2}';
     html += '.timeline-month.active{background:#1e3a5f;color:white;border-color:#1e3a5f}';
-    html += '.timeline-month .tm-amount{display:block;font-size:0.6875rem;font-weight:600;color:#0088c2;margin-top:0.125rem}.timeline-month.active .tm-amount{color:#7dd3fc}';
+    html += '.timeline-month .tm-amounts{display:flex;gap:0.5rem;font-size:0.625rem;font-weight:600;margin-top:0.25rem}';
+    html += '.timeline-month .tm-open{color:#34c759}.timeline-month .tm-invoiced{color:#8e8e93}.timeline-month .tm-total{color:#0088c2}';
+    html += '.timeline-month.active .tm-open{color:#86efac}.timeline-month.active .tm-invoiced{color:#d1d5db}.timeline-month.active .tm-total{color:#7dd3fc}';
 
     // Month section - redesigned with full-width header
     html += '.month-section{margin-bottom:0.5rem}';
@@ -1151,7 +1166,10 @@ function getHTML() {
     html += 'var monthLabel = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "long", year: "numeric"}) : "No Date";';
     html += 'var monthShort = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "short"}) : "TBD";';
     html += 'var comm = item.commodity || "Other";';
-    html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, shortLabel: monthShort, commodities: {}, totalQty: 0, totalDollars: 0, styleCount: 0 };';
+    html += 'var orderStatus = o.status || "Open";';
+    html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, shortLabel: monthShort, commodities: {}, totalQty: 0, totalDollars: 0, openDollars: 0, invoicedDollars: 0, styleCount: 0 };';
+    html += 'if (orderStatus === "Open" || orderStatus === "Partial") monthGroups[monthKey].openDollars += o.total_amount || 0;';
+    html += 'else monthGroups[monthKey].invoicedDollars += o.total_amount || 0;';
     html += 'if (!monthGroups[monthKey].commodities[comm]) monthGroups[monthKey].commodities[comm] = { items: {}, totalQty: 0, totalDollars: 0 };';
     html += 'if (!monthGroups[monthKey].commodities[comm].items[item.style_number]) {';
     html += 'monthGroups[monthKey].commodities[comm].items[item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0, order_count: 0 };';
@@ -1166,11 +1184,15 @@ function getHTML() {
     html += 'grandTotal += o.total_amount || 0;';
     html += '}); });';
     html += 'var sortedMonths = Object.keys(monthGroups).sort();';
-    // Build timeline bar
+    // Build timeline bar with status colors
     html += 'var out = \'<div class="timeline-bar">\';';
     html += 'sortedMonths.forEach(function(mk, idx) {';
     html += 'var g = monthGroups[mk];';
-    html += 'out += \'<div class="timeline-month" onclick="scrollToMonth(\\\'\' + mk + \'\\\')"><span>\' + g.shortLabel + \'</span><span class="tm-amount">$\' + (g.totalDollars/1000).toFixed(0) + \'K</span></div>\';';
+    html += 'out += \'<div class="timeline-month" onclick="scrollToMonth(\\\'\' + mk + \'\\\')"><span>\' + g.shortLabel + \'</span>\';';
+    html += 'out += \'<div class="tm-amounts">\';';
+    html += 'if (g.openDollars > 0) out += \'<span class="tm-open">$\' + (g.openDollars/1000).toFixed(0) + \'K</span>\';';
+    html += 'if (g.invoicedDollars > 0) out += \'<span class="tm-invoiced">$\' + (g.invoicedDollars/1000).toFixed(0) + \'K</span>\';';
+    html += 'out += \'</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     // Build month sections
