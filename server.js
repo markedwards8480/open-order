@@ -921,7 +921,7 @@ function getHTML() {
     html += '.product-grid{display:grid;gap:1.25rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}';
 
     // Timeline bar at top
-    html += '.timeline-bar{background:white;padding:1rem 2rem;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;gap:0.5rem;overflow-x:auto;position:sticky;top:56px;z-index:90}';
+    html += '.timeline-bar{background:white;padding:1rem 2rem;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;gap:0.5rem;overflow-x:auto;margin-bottom:1rem;border-radius:12px}';
     html += '.timeline-month{padding:0.5rem 1rem;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:0.8125rem;font-weight:500;transition:all 0.2s;border:1px solid #e0e0e0;background:white;color:#6e6e73}';
     html += '.timeline-month:hover{border-color:#0088c2;color:#0088c2}';
     html += '.timeline-month.active{background:#1e3a5f;color:white;border-color:#1e3a5f}';
@@ -929,7 +929,7 @@ function getHTML() {
 
     // Month section - redesigned with full-width header
     html += '.month-section{margin-bottom:0.5rem}';
-    html += '.month-header{background:linear-gradient(135deg,#1e3a5f 0%,#2d5a87 100%);color:white;padding:1.25rem 1.5rem;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;position:sticky;top:106px;z-index:80;margin-top:1rem}';
+    html += '.month-header{background:linear-gradient(135deg,#1e3a5f 0%,#2d5a87 100%);color:white;padding:1.25rem 1.5rem;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-top:1rem}';
     html += '.month-header:first-child{margin-top:0}';
     html += '.month-header:hover{background:linear-gradient(135deg,#2d5a87 0%,#3d6a97 100%)}';
     html += '.month-header h2{font-size:1.375rem;font-weight:700;color:white;margin:0;display:flex;align-items:center;gap:0.75rem}';
@@ -1132,10 +1132,12 @@ function getHTML() {
     // Render content
     html += 'function renderContent(data) {';
     html += 'var container = document.getElementById("content");';
+    html += 'try {';
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
     html += 'else if (state.view === "charts") { renderChartsView(container, data); }';
-    html += 'else { renderOrdersView(container, data.orders || []); }}';
+    html += 'else { renderOrdersView(container, data.orders || []); }';
+    html += '} catch(e) { console.error("Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
 
     // Render monthly view - group styles by delivery month, then by commodity
     html += 'function renderMonthlyView(container, items) {';
