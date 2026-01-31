@@ -767,6 +767,12 @@ function getHTML() {
     // Product grid
     html += '.product-grid{display:grid;gap:1.25rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}';
 
+    // Month section
+    html += '.month-section{margin-bottom:2.5rem}.month-section:last-child{margin-bottom:0}';
+    html += '.month-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;padding-bottom:0.75rem;border-bottom:2px solid #1e3a5f}';
+    html += '.month-header h2{font-size:1.5rem;font-weight:700;color:#1e3a5f;margin:0}';
+    html += '.month-stats{display:flex;gap:1.5rem;font-size:0.875rem;color:#86868b}.month-stats span{font-weight:500}.month-stats .money{color:#0088c2;font-weight:600}';
+
     // Style card
     html += '.style-card{background:white;border-radius:16px;overflow:hidden;cursor:pointer;transition:all 0.3s ease;border:1px solid rgba(0,0,0,0.04)}.style-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.12)}';
     html += '.style-image{height:200px;background:#f5f5f7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}.style-image img{max-width:90%;max-height:90%;object-fit:contain}';
@@ -850,7 +856,7 @@ function getHTML() {
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button></div>';
     html += '</div>';
 
     // Main content
@@ -872,7 +878,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { filters: { customer: "", month: "", commodity: "", status: "Open" }, view: "styles", data: null };';
+    html += 'var state = { filters: { customer: "", month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -894,7 +900,7 @@ function getHTML() {
     html += 'if (state.filters.month) params.append("month", state.filters.month);';
     html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
-    html += 'var url = state.view === "styles" ? "/api/orders?" : "/api/orders/by-so?";';
+    html += 'var url = state.view === "orders" ? "/api/orders/by-so?" : "/api/orders?";';
     html += 'var res = await fetch(url + params.toString());';
     html += 'var data = await res.json();';
     html += 'state.data = data;';
@@ -913,8 +919,50 @@ function getHTML() {
     // Render content
     html += 'function renderContent(data) {';
     html += 'var container = document.getElementById("content");';
-    html += 'if (state.view === "styles") { renderStylesView(container, data.items || []); }';
+    html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
+    html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
     html += 'else { renderOrdersView(container, data.orders || []); }}';
+
+    // Render monthly view - group styles by delivery month
+    html += 'function renderMonthlyView(container, items) {';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3><p>Try adjusting your filters or import some data</p></div>\'; return; }';
+    html += 'var monthGroups = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toISOString().slice(0,7) : "no-date";';
+    html += 'var monthLabel = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "long", year: "numeric"}) : "No Date";';
+    html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, items: {}, totalQty: 0, totalDollars: 0 };';
+    html += 'if (!monthGroups[monthKey].items[item.style_number]) {';
+    html += 'monthGroups[monthKey].items[item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0, order_count: 0 }; }';
+    html += 'monthGroups[monthKey].items[item.style_number].total_qty += o.quantity || 0;';
+    html += 'monthGroups[monthKey].items[item.style_number].total_dollars += o.total_amount || 0;';
+    html += 'monthGroups[monthKey].items[item.style_number].order_count += 1;';
+    html += 'monthGroups[monthKey].totalQty += o.quantity || 0;';
+    html += 'monthGroups[monthKey].totalDollars += o.total_amount || 0;';
+    html += '}); });';
+    html += 'var sortedMonths = Object.keys(monthGroups).sort();';
+    html += 'var html = "";';
+    html += 'sortedMonths.forEach(function(monthKey) {';
+    html += 'var group = monthGroups[monthKey];';
+    html += 'var styleList = Object.values(group.items).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    html += 'html += \'<div class="month-section"><div class="month-header"><h2>\' + group.label + \'</h2>\';';
+    html += 'html += \'<div class="month-stats"><span>\' + styleList.length + \' styles</span><span>\' + formatNumber(group.totalQty) + \' units</span><span class="money">$\' + formatNumber(Math.round(group.totalDollars)) + \'</span></div></div>\';';
+    html += 'html += \'<div class="product-grid">\';';
+    html += 'styleList.forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
+    html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'html += \'<div class="style-card" onclick="showStyleDetail(\\\'\'+ item.style_number +\'\\\')"><div class="style-image">\';';
+    html += 'if (item.commodity) html += \'<span class="commodity-badge">\' + escapeHtml(item.commodity) + \'</span>\';';
+    html += 'html += \'<span class="style-badge">\' + item.order_count + \' order\' + (item.order_count > 1 ? "s" : "") + \'</span>\';';
+    html += 'if (imgSrc) html += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
+    html += 'else html += \'<span style="color:#ccc;font-size:3rem">👔</span>\';';
+    html += 'html += \'</div><div class="style-info"><div class="style-number">\' + escapeHtml(item.style_number) + \'</div>\';';
+    html += 'html += \'<div class="style-name">\' + escapeHtml(item.style_name || item.style_number) + \'</div>\';';
+    html += 'html += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.total_qty) + \'</div><div class="style-stat-label">Units</div></div>\';';
+    html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
+    html += 'html += \'</div></div>\'; });';
+    html += 'container.innerHTML = html; }';
 
     // Render styles view
     html += 'function renderStylesView(container, items) {';
