@@ -302,9 +302,11 @@ app.get('/api/orders', async function(req, res) {
             var fyInt = parseInt(fiscalYear);
             var fyStart = (fyInt - 1) + '-06-01';
             var fyEnd = fyInt + '-05-31';
-            conditions.push("delivery_date >= $" + paramIndex++ + " AND delivery_date <= $" + paramIndex++);
+            conditions.push("delivery_date::date >= $" + paramIndex + "::date AND delivery_date::date <= $" + (paramIndex + 1) + "::date");
             params.push(fyStart);
             params.push(fyEnd);
+            paramIndex += 2;
+            console.log('FY Filter applied: FY' + fiscalYear + ' = ' + fyStart + ' to ' + fyEnd);
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
@@ -417,9 +419,10 @@ app.get('/api/orders/by-so', async function(req, res) {
             var fyInt = parseInt(fiscalYear);
             var fyStart = (fyInt - 1) + '-06-01';
             var fyEnd = fyInt + '-05-31';
-            conditions.push("delivery_date >= $" + paramIndex++ + " AND delivery_date <= $" + paramIndex++);
+            conditions.push("delivery_date::date >= $" + paramIndex + "::date AND delivery_date::date <= $" + (paramIndex + 1) + "::date");
             params.push(fyStart);
             params.push(fyEnd);
+            paramIndex += 2;
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
