@@ -350,10 +350,21 @@ app.get('/api/orders', async function(req, res) {
 
         // Debug logging
         console.log('=== /api/orders DEBUG ===');
-        console.log('Fiscal Year param received:', fiscalYear);
+        console.log('Fiscal Year param received:', fiscalYear || 'NONE');
+        console.log('Status param received:', status);
         console.log('Where clause:', whereClause);
         console.log('Params:', JSON.stringify(params));
-        console.log('Conditions:', JSON.stringify(conditions));
+
+        // Extra check: if FY2026 selected, verify no May 2025 data
+        if (fiscalYear === '2026') {
+            var mayCheck = await pool.query(
+                "SELECT COUNT(*) as may_count FROM order_items WHERE " +
+                conditions.join(' AND ') +
+                " AND TO_CHAR(delivery_date, 'YYYY-MM') = '2025-05'",
+                params
+            );
+            console.log('MAY 2025 count with FY2026 filter:', mayCheck.rows[0].may_count);
+        }
 
         var query = `
             SELECT
@@ -396,6 +407,9 @@ app.get('/api/orders', async function(req, res) {
         `;
         var statsResult = await pool.query(statsQuery, params);
 
+        // Prevent browser caching of filtered results
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.set('Pragma', 'no-cache');
         res.json({
             items: result.rows,
             stats: statsResult.rows[0]
