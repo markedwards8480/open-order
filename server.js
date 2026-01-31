@@ -323,6 +323,11 @@ app.get('/api/orders', async function(req, res) {
 
         var whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
+        // Debug logging
+        console.log('=== /api/orders DEBUG ===');
+        console.log('Where clause:', whereClause);
+        console.log('Params:', params);
+
         var query = `
             SELECT
                 style_number,
@@ -960,6 +965,55 @@ app.get('/api/zoho/status', async function(req, res) {
             stylesCached: parseInt(stylesCached.rows[0].count)
         }
     });
+});
+
+// Debug endpoint to check date data
+app.get('/api/debug/dates', async function(req, res) {
+    try {
+        // Check what dates are in the database
+        var dateRanges = await pool.query(`
+            SELECT
+                MIN(delivery_date) as min_date,
+                MAX(delivery_date) as max_date,
+                COUNT(*) as total_rows
+            FROM order_items
+        `);
+
+        // Check unique months
+        var months = await pool.query(`
+            SELECT
+                TO_CHAR(delivery_date::date, 'YYYY-MM') as month,
+                COUNT(*) as count
+            FROM order_items
+            WHERE delivery_date IS NOT NULL
+            GROUP BY TO_CHAR(delivery_date::date, 'YYYY-MM')
+            ORDER BY month
+        `);
+
+        // Test FY2026 filter directly
+        var fy2026Test = await pool.query(`
+            SELECT COUNT(*) as count
+            FROM order_items
+            WHERE delivery_date::date >= '2025-06-01'::date
+            AND delivery_date::date <= '2026-05-31'::date
+        `);
+
+        // Check May 2025 specifically
+        var may2025 = await pool.query(`
+            SELECT COUNT(*) as count
+            FROM order_items
+            WHERE TO_CHAR(delivery_date::date, 'YYYY-MM') = '2025-05'
+        `);
+
+        res.json({
+            dateRange: dateRanges.rows[0],
+            monthCounts: months.rows,
+            fy2026Count: parseInt(fy2026Test.rows[0].count),
+            may2025Count: parseInt(may2025.rows[0].count)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ============================================
