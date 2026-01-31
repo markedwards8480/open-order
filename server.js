@@ -36,8 +36,8 @@ var zohoAccessToken = null;
 // Based on best practices to avoid hitting API limits
 // ============================================
 
-// Concurrency control - max 2 simultaneous Zoho requests
-const MAX_CONCURRENT_ZOHO_REQUESTS = 2;
+// Concurrency control - max 10 simultaneous Zoho requests
+const MAX_CONCURRENT_ZOHO_REQUESTS = 10;
 var activeZohoRequests = 0;
 var zohoRequestQueue = [];
 
