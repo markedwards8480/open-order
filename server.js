@@ -923,7 +923,7 @@ function getHTML() {
     html += 'items.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
-    html += 'var match = imgSrc.match(/download[^\\/]*\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'html += \'<div class="style-card" onclick="showStyleDetail(\\\'\'+ item.style_number +\'\\\')"><div class="style-image">\';';
     html += 'if (item.commodity) html += \'<span class="commodity-badge">\' + escapeHtml(item.commodity) + \'</span>\';';
     html += 'html += \'<span class="style-badge">\' + item.order_count + \' order\' + (item.order_count > 1 ? "s" : "") + \'</span>\';';
@@ -948,7 +948,7 @@ function getHTML() {
     html += 'order.items.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
-    html += 'var match = imgSrc.match(/download[^\\/]*\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'html += \'<div class="so-item"><div class="so-item-image">\';';
     html += 'if (imgSrc) html += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
     html += 'else html += \'<span style="color:#ccc">👔</span>\';';
@@ -967,7 +967,7 @@ function getHTML() {
     html += 'if (!item) return;';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
-    html += 'var match = imgSrc.match(/download[^\\/]*\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'document.getElementById("modalImage").src = imgSrc;';
     html += 'document.getElementById("modalStyleName").textContent = item.style_name || item.style_number;';
     html += 'document.getElementById("modalStyleNumber").textContent = item.style_number + (item.commodity ? " · " + item.commodity : "");';
