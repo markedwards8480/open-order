@@ -118,10 +118,20 @@ async function fetchZohoImage(fileId) {
             }
         }
 
-        var imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+        // Use the accelerated download endpoint (matches CSV URL format: download-accl.zoho.com)
+        var imageUrl = 'https://download-accl.zoho.com/v1/workdrive/download/' + fileId;
         var response = await fetchWithBackoff(imageUrl, {
             headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
         });
+
+        // If accelerated endpoint fails, try standard API endpoint as fallback
+        if (!response.ok && (response.status === 404 || response.status === 400)) {
+            console.log('Trying fallback URL for:', fileId);
+            imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+            response = await fetchWithBackoff(imageUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
 
         if (!response.ok) {
             var errorText = await response.text().catch(() => 'Unknown error');
