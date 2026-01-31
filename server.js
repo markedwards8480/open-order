@@ -1024,6 +1024,32 @@ function getHTML() {
     html += '.chart-wrapper{height:300px;position:relative}';
     html += '.export-btn{background:#0088c2;color:white;border:none;padding:0.625rem 1.25rem;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}.export-btn:hover{background:#006699}';
 
+    // Summary matrix table
+    html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
+    html += '.summary-table{width:100%;border-collapse:collapse;font-size:0.8125rem}';
+    html += '.summary-table th,.summary-table td{padding:0.75rem 1rem;text-align:right;border-bottom:1px solid #f0f0f0}';
+    html += '.summary-table th{background:#f5f5f7;font-weight:600;color:#1e3a5f;position:sticky;top:0}';
+    html += '.summary-table th:first-child,.summary-table td:first-child{text-align:left;font-weight:600;position:sticky;left:0;background:white;z-index:1}';
+    html += '.summary-table th:first-child{background:#f5f5f7;z-index:2}';
+    html += '.summary-table tr:hover td{background:#f9fafb}';
+    html += '.summary-table tr:hover td:first-child{background:#f9fafb}';
+    html += '.summary-table .row-total{background:#e8f4fc !important;font-weight:600;color:#0088c2}';
+    html += '.summary-table .col-total{background:#f5f5f7;font-weight:600}';
+    html += '.summary-table .grand-total{background:#1e3a5f !important;color:white;font-weight:700}';
+    html += '.summary-cell{display:flex;flex-direction:column;align-items:flex-end;gap:2px}';
+    html += '.summary-cell .dollars{font-weight:600;color:#1e3a5f}';
+    html += '.summary-cell .units{font-size:0.6875rem;color:#86868b}';
+    html += '.summary-cell.has-value .dollars{color:#0088c2}';
+    html += '.summary-legend{display:flex;gap:2rem;margin-bottom:1rem;font-size:0.8125rem;color:#86868b}';
+    html += '.summary-legend span{display:flex;align-items:center;gap:0.5rem}';
+    html += '.comm-color-box{width:12px;height:12px;border-radius:3px}';
+    html += '.summary-table .comm-row-top td:first-child{border-left:4px solid #0088c2}';
+    html += '.summary-table .comm-row-bottom td:first-child{border-left:4px solid #34c759}';
+    html += '.summary-table .comm-row-dress td:first-child{border-left:4px solid #af52de}';
+    html += '.summary-table .comm-row-sweater td:first-child{border-left:4px solid #ff9500}';
+    html += '.summary-table .comm-row-jacket td:first-child{border-left:4px solid #ff3b30}';
+    html += '.summary-table .comm-row-other td:first-child{border-left:4px solid #86868b}';
+
     // Style card
     html += '.style-card{background:white;border-radius:16px;overflow:hidden;cursor:pointer;transition:all 0.3s ease;border:1px solid rgba(0,0,0,0.04)}.style-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.12)}';
     html += '.style-image{height:200px;background:#f5f5f7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}.style-image img{max-width:90%;max-height:90%;object-fit:contain}';
@@ -1109,7 +1135,7 @@ function getHTML() {
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
     html += '</div>';
 
     // Main content
@@ -1193,6 +1219,7 @@ function getHTML() {
     html += 'var container = document.getElementById("content");';
     html += 'try {';
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
+    html += 'else if (state.view === "summary") { renderSummaryView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
     html += 'else if (state.view === "charts") { renderChartsView(container, data); }';
     html += 'else { renderOrdersView(container, data.orders || []); }';
@@ -1297,6 +1324,75 @@ function getHTML() {
     html += 'html += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.total_qty) + \'</div><div class="style-stat-label">Units</div></div>\';';
     html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
     html += 'html += \'</div>\'; container.innerHTML = html; }';
+
+    // Render summary view - matrix of commodities vs months
+    html += 'function renderSummaryView(container, items) {';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3><p>Try adjusting your filters or import some data</p></div>\'; return; }';
+    // Build data structure: commodities x months
+    html += 'var data = {}; var months = new Set(); var commodities = new Set();';
+    html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'commodities.add(comm);';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toISOString().slice(0,7) : "TBD";';
+    html += 'months.add(monthKey);';
+    html += 'var key = comm + "|" + monthKey;';
+    html += 'if (!data[key]) data[key] = { dollars: 0, units: 0 };';
+    html += 'data[key].dollars += o.total_amount || 0;';
+    html += 'data[key].units += o.quantity || 0;';
+    html += '}); });';
+    // Sort months and commodities
+    html += 'var sortedMonths = Array.from(months).sort();';
+    html += 'var commTotals = {};';
+    html += 'Array.from(commodities).forEach(function(c) {';
+    html += 'commTotals[c] = { dollars: 0, units: 0 };';
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'var key = c + "|" + m;';
+    html += 'if (data[key]) { commTotals[c].dollars += data[key].dollars; commTotals[c].units += data[key].units; }';
+    html += '}); });';
+    html += 'var sortedComms = Array.from(commodities).sort(function(a,b) { return commTotals[b].dollars - commTotals[a].dollars; });';
+    // Calculate column totals
+    html += 'var colTotals = {};';
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'colTotals[m] = { dollars: 0, units: 0 };';
+    html += 'sortedComms.forEach(function(c) {';
+    html += 'var key = c + "|" + m;';
+    html += 'if (data[key]) { colTotals[m].dollars += data[key].dollars; colTotals[m].units += data[key].units; }';
+    html += '}); });';
+    html += 'var grandTotal = { dollars: 0, units: 0 };';
+    html += 'sortedComms.forEach(function(c) { grandTotal.dollars += commTotals[c].dollars; grandTotal.units += commTotals[c].units; });';
+    // Build HTML
+    html += 'var out = \'<div class="summary-container">\';';
+    html += 'out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\';';
+    html += 'out += \'<table class="summary-table"><thead><tr><th>Commodity</th>\';';
+    // Month headers
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'var label = m === "TBD" ? "TBD" : new Date(m + "-01").toLocaleDateString("en-US", {month: "short", year: "2-digit"});';
+    html += 'out += \'<th>\' + label + \'</th>\'; });';
+    html += 'out += \'<th class="row-total">Total</th></tr></thead><tbody>\';';
+    // Data rows
+    html += 'sortedComms.forEach(function(comm) {';
+    html += 'var rowClass = "comm-row-" + comm.toLowerCase().replace(/[^a-z]/g, "");';
+    html += 'if (["top","bottom","dress","sweater","jacket"].indexOf(comm.toLowerCase()) === -1) rowClass = "comm-row-other";';
+    html += 'out += \'<tr class="\' + rowClass + \'"><td>\' + escapeHtml(comm) + \'</td>\';';
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'var key = comm + "|" + m;';
+    html += 'var cell = data[key] || { dollars: 0, units: 0 };';
+    html += 'var hasValue = cell.dollars > 0;';
+    html += 'out += \'<td><div class="summary-cell\' + (hasValue ? " has-value" : "") + \'">\';';
+    html += 'out += \'<span class="dollars">$\' + formatNumber(Math.round(cell.dollars)) + \'</span>\';';
+    html += 'out += \'<span class="units">\' + formatNumber(cell.units) + \' units</span>\';';
+    html += 'out += \'</div></td>\'; });';
+    // Row total
+    html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">$\' + formatNumber(Math.round(commTotals[comm].dollars)) + \'</span><span class="units">\' + formatNumber(commTotals[comm].units) + \' units</span></div></td></tr>\'; });';
+    // Column totals row
+    html += 'out += \'<tr class="col-total"><td><strong>Monthly Total</strong></td>\';';
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'out += \'<td><div class="summary-cell has-value"><span class="dollars">$\' + formatNumber(Math.round(colTotals[m].dollars)) + \'</span><span class="units">\' + formatNumber(colTotals[m].units) + \' units</span></div></td>\'; });';
+    // Grand total
+    html += 'out += \'<td class="grand-total"><div class="summary-cell"><span class="dollars" style="color:white">$\' + formatNumber(Math.round(grandTotal.dollars)) + \'</span><span class="units" style="color:rgba(255,255,255,0.7)">\' + formatNumber(grandTotal.units) + \' units</span></div></td></tr>\';';
+    html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
 
     // Render orders view
     html += 'function renderOrdersView(container, orders) {';
