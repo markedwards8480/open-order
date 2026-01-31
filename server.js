@@ -257,7 +257,8 @@ app.get('/api/orders', async function(req, res) {
         var customers = req.query.customers; // comma-separated list for multi-select
         var commodity = req.query.commodity;
         var month = req.query.month; // Format: YYYY-MM
-        var year = req.query.year; // Year filter
+        var year = req.query.year; // Calendar year filter
+        var fiscalYear = req.query.fiscalYear; // Fiscal year filter (June 1 - May 31)
         var status = req.query.status || 'Open';
         var style = req.query.style;
         var soNumber = req.query.so_number;
@@ -293,6 +294,16 @@ app.get('/api/orders', async function(req, res) {
         if (year) {
             conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
             params.push(parseInt(year));
+        }
+        if (fiscalYear) {
+            // Fiscal year runs June 1 to May 31
+            // FY2026 = June 1, 2025 - May 31, 2026
+            var fyInt = parseInt(fiscalYear);
+            var fyStart = (fyInt - 1) + '-06-01';
+            var fyEnd = fyInt + '-05-31';
+            conditions.push("delivery_date >= $" + paramIndex++ + " AND delivery_date <= $" + paramIndex++);
+            params.push(fyStart);
+            params.push(fyEnd);
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
@@ -367,6 +378,7 @@ app.get('/api/orders/by-so', async function(req, res) {
         var commodity = req.query.commodity;
         var month = req.query.month;
         var year = req.query.year;
+        var fiscalYear = req.query.fiscalYear;
         var status = req.query.status || 'Open';
 
         var conditions = [];
@@ -399,6 +411,14 @@ app.get('/api/orders/by-so', async function(req, res) {
         if (year) {
             conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
             params.push(parseInt(year));
+        }
+        if (fiscalYear) {
+            var fyInt = parseInt(fiscalYear);
+            var fyStart = (fyInt - 1) + '-06-01';
+            var fyEnd = fyInt + '-05-31';
+            conditions.push("delivery_date >= $" + paramIndex++ + " AND delivery_date <= $" + paramIndex++);
+            params.push(fyStart);
+            params.push(fyEnd);
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
@@ -475,11 +495,27 @@ app.get('/api/filters', async function(req, res) {
             ORDER BY year DESC
         `);
 
+        // Calculate fiscal years (June 1 - May 31)
+        // If month >= 6, fiscal year = calendar year + 1
+        // If month < 6, fiscal year = calendar year
+        var fiscalYearsResult = await pool.query(`
+            SELECT DISTINCT
+                CASE
+                    WHEN EXTRACT(MONTH FROM delivery_date) >= 6
+                    THEN EXTRACT(YEAR FROM delivery_date)::INTEGER + 1
+                    ELSE EXTRACT(YEAR FROM delivery_date)::INTEGER
+                END as fiscal_year
+            FROM order_items
+            WHERE delivery_date IS NOT NULL
+            ORDER BY fiscal_year DESC
+        `);
+
         res.json({
             customers: customersResult.rows,
             commodities: commoditiesResult.rows,
             months: monthsResult.rows,
-            years: yearsResult.rows.map(r => r.year)
+            years: yearsResult.rows.map(r => r.year),
+            fiscalYears: fiscalYearsResult.rows.map(r => r.fiscal_year)
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1066,7 +1102,8 @@ function getHTML() {
 
     // Filters bar
     html += '<div class="filters-bar">';
-    html += '<div class="filter-group"><label class="filter-label">Year</label><select class="filter-select" id="yearFilter"></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Cal Year</label><select class="filter-select" id="yearFilter"></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Fiscal Year</label><select class="filter-select" id="fiscalYearFilter"></select></div>';
     html += '<div class="filter-group"><label class="filter-label">Customer</label><div class="multi-select" id="customerMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'customer\')"><span id="customerDisplay">All Customers</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="customerDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Delivery</label><select class="filter-select" id="monthFilter"><option value="">All Months</option></select></div>';
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
@@ -1094,7 +1131,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { filters: { year: "", customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
+    html += 'var state = { filters: { year: "", fiscalYear: "", customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -1106,6 +1143,12 @@ function getHTML() {
     html += 'if (data.years.length === 0) { for(var y = currentYear; y >= currentYear - 3; y--) data.years.push(y); }';
     html += 'var allOpt = document.createElement("option"); allOpt.value = ""; allOpt.textContent = "All Years"; allOpt.selected = true; yearSelect.appendChild(allOpt);';
     html += 'data.years.forEach(function(y) { var opt = document.createElement("option"); opt.value = y; opt.textContent = y; yearSelect.appendChild(opt); });';
+    // Fiscal Year filter (June 1 - May 31)
+    html += 'var fySelect = document.getElementById("fiscalYearFilter");';
+    html += 'var fyAllOpt = document.createElement("option"); fyAllOpt.value = ""; fyAllOpt.textContent = "All FY"; fyAllOpt.selected = true; fySelect.appendChild(fyAllOpt);';
+    html += 'data.fiscalYears = data.fiscalYears || [];';
+    html += 'if (data.fiscalYears.length === 0) { for(var fy = currentYear + 1; fy >= currentYear - 3; fy--) data.fiscalYears.push(fy); }';
+    html += 'data.fiscalYears.forEach(function(fy) { var opt = document.createElement("option"); opt.value = fy; opt.textContent = "FY" + fy; fySelect.appendChild(opt); });';
     // Customer multi-select
     html += 'var custDropdown = document.getElementById("customerDropdown");';
     html += 'custDropdown.innerHTML = \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllCustomers()">Select All</button><button class="clear-all" onclick="clearAllCustomers()">Clear All</button></div>\';';
@@ -1124,6 +1167,7 @@ function getHTML() {
     html += 'try {';
     html += 'var params = new URLSearchParams();';
     html += 'if (state.filters.year) params.append("year", state.filters.year);';
+    html += 'if (state.filters.fiscalYear) params.append("fiscalYear", state.filters.fiscalYear);';
     html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join(","));';
     html += 'if (state.filters.month) params.append("month", state.filters.month);';
     html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
@@ -1452,7 +1496,8 @@ function getHTML() {
     html += '} catch(e) { document.getElementById("uploadStatus").textContent = "Error: " + e.message; }}';
 
     // Filter handlers
-    html += 'document.getElementById("yearFilter").addEventListener("change", function(e) { state.filters.year = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    html += 'document.getElementById("yearFilter").addEventListener("change", function(e) { state.filters.year = e.target.value; state.filters.fiscalYear = ""; document.getElementById("fiscalYearFilter").value = ""; document.getElementById("fiscalYearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    html += 'document.getElementById("fiscalYearFilter").addEventListener("change", function(e) { state.filters.fiscalYear = e.target.value; state.filters.year = ""; document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
     html += 'document.getElementById("monthFilter").addEventListener("change", function(e) { state.filters.month = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
     html += 'document.getElementById("commodityFilter").addEventListener("change", function(e) { state.filters.commodity = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
 
@@ -1468,14 +1513,15 @@ function getHTML() {
 
     // Clear filters
     html += 'function clearFilters() {';
-    html += 'state.filters = { year: "", customers: [], month: "", commodity: "", status: state.filters.status };';
+    html += 'state.filters = { year: "", fiscalYear: "", customers: [], month: "", commodity: "", status: state.filters.status };';
     html += 'document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active");';
+    html += 'document.getElementById("fiscalYearFilter").value = ""; document.getElementById("fiscalYearFilter").classList.remove("active");';
     html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
     html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
     html += 'document.getElementById("monthFilter").value = ""; document.getElementById("monthFilter").classList.remove("active");';
     html += 'document.getElementById("commodityFilter").value = ""; document.getElementById("commodityFilter").classList.remove("active");';
     html += 'updateClearButton(); loadData(); }';
-    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.month || state.filters.commodity || (state.filters.year && state.filters.year != new Date().getFullYear().toString());';
+    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.month || state.filters.commodity || state.filters.year || state.filters.fiscalYear;';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
 
     // Chat
