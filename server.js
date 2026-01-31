@@ -36,8 +36,9 @@ var zohoAccessToken = null;
 // Based on best practices to avoid hitting API limits
 // ============================================
 
-// Concurrency control - max 10 simultaneous Zoho requests
-const MAX_CONCURRENT_ZOHO_REQUESTS = 10;
+// Concurrency control - max 25 simultaneous Zoho requests for faster initial loading
+// Once images are cached in Railway DB, this won't matter - they'll be served instantly
+const MAX_CONCURRENT_ZOHO_REQUESTS = 25;
 var activeZohoRequests = 0;
 var zohoRequestQueue = [];
 
@@ -873,12 +874,16 @@ app.get('/api/image/:fileId', async function(req, res) {
             [fileId]
         );
 
-        if (cacheResult.rows.length > 0) {
+        if (cacheResult.rows.length > 0 && cacheResult.rows[0].image_data) {
             // Return cached image from database - zero Zoho API calls
+            console.log('✓ Cache HIT:', fileId);
             res.set('Content-Type', cacheResult.rows[0].content_type || 'image/jpeg');
             res.set('Cache-Control', 'public, max-age=31536000');
             return res.send(cacheResult.rows[0].image_data);
         }
+
+        // Cache miss - need to fetch from Zoho
+        console.log('○ Cache MISS, fetching from Zoho:', fileId);
 
         // Fetch from Zoho using queue system with rate limiting and backoff
         // This ensures we never exceed concurrency limits
@@ -890,9 +895,9 @@ app.get('/api/image/:fileId', async function(req, res) {
                 'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
                 [fileId, result.buffer, result.contentType]
             );
-            console.log('Cached image in database:', fileId);
+            console.log('✓ Cached in Railway DB:', fileId, '(' + (result.buffer.length / 1024).toFixed(1) + ' KB)');
         } catch (cacheErr) {
-            console.log('Could not cache image in database:', cacheErr.message);
+            console.log('✗ Cache FAILED:', fileId, cacheErr.message);
         }
 
         res.set('Content-Type', result.contentType);
@@ -905,12 +910,37 @@ app.get('/api/image/:fileId', async function(req, res) {
     }
 });
 
-// Zoho status
+// Zoho status and cache stats
 app.get('/api/zoho/status', async function(req, res) {
     var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
 
-    // Get cached image count
-    var cacheCount = await pool.query('SELECT COUNT(*) as count FROM image_cache');
+    // Get cached image count and size
+    var cacheStats = await pool.query(`
+        SELECT
+            COUNT(*) as count,
+            COALESCE(SUM(LENGTH(image_data)), 0) as total_bytes
+        FROM image_cache
+        WHERE image_data IS NOT NULL
+    `);
+
+    // Get count of unique styles with image URLs
+    var stylesWithImages = await pool.query(`
+        SELECT COUNT(DISTINCT style_number) as count
+        FROM order_items
+        WHERE image_url IS NOT NULL AND image_url != ''
+    `);
+
+    // Get count of styles that have a Zoho file ID that's already cached
+    var stylesCached = await pool.query(`
+        SELECT COUNT(DISTINCT o.style_number) as count
+        FROM order_items o
+        JOIN image_cache c ON o.image_url LIKE '%' || c.file_id || '%'
+        WHERE o.image_url IS NOT NULL AND o.image_url != ''
+    `);
+
+    var cachedCount = parseInt(cacheStats.rows[0].count);
+    var cacheSizeBytes = parseInt(cacheStats.rows[0].total_bytes);
+    var cacheSizeMB = (cacheSizeBytes / (1024 * 1024)).toFixed(2);
 
     res.json({
         configured: hasCredentials,
@@ -921,7 +951,10 @@ app.get('/api/zoho/status', async function(req, res) {
             maxConcurrent: MAX_CONCURRENT_ZOHO_REQUESTS
         },
         cache: {
-            cachedImages: parseInt(cacheCount.rows[0].count)
+            cachedImages: cachedCount,
+            cacheSizeMB: parseFloat(cacheSizeMB),
+            stylesWithImageUrls: parseInt(stylesWithImages.rows[0].count),
+            stylesCached: parseInt(stylesCached.rows[0].count)
         }
     });
 });
