@@ -31,6 +31,103 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 var zohoAccessToken = null;
 
+// ============================================
+// ZOHO API RATE LIMITING & QUEUE SYSTEM
+// Based on best practices to avoid hitting API limits
+// ============================================
+
+// Concurrency control - max 2 simultaneous Zoho requests
+const MAX_CONCURRENT_ZOHO_REQUESTS = 2;
+var activeZohoRequests = 0;
+var zohoRequestQueue = [];
+
+// Process the Zoho request queue
+function processZohoQueue() {
+    while (zohoRequestQueue.length > 0 && activeZohoRequests < MAX_CONCURRENT_ZOHO_REQUESTS) {
+        var next = zohoRequestQueue.shift();
+        activeZohoRequests++;
+        next.execute()
+            .then(next.resolve)
+            .catch(next.reject)
+            .finally(() => {
+                activeZohoRequests--;
+                processZohoQueue();
+            });
+    }
+}
+
+// Queue a Zoho API request with concurrency control
+function queueZohoRequest(requestFn) {
+    return new Promise((resolve, reject) => {
+        zohoRequestQueue.push({
+            execute: requestFn,
+            resolve: resolve,
+            reject: reject
+        });
+        processZohoQueue();
+    });
+}
+
+// Exponential backoff retry for Zoho API calls
+async function fetchWithBackoff(url, options, maxRetries = 4) {
+    var lastError;
+    for (var attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            var response = await fetch(url, options);
+
+            // Handle rate limiting (429)
+            if (response.status === 429) {
+                var retryAfter = response.headers.get('Retry-After');
+                var waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+                console.log('Zoho rate limit hit, waiting ' + (waitTime/1000) + 's before retry...');
+                await sleep(waitTime);
+                continue;
+            }
+
+            // Handle token expiration (401)
+            if (response.status === 401 && attempt < maxRetries - 1) {
+                console.log('Zoho token expired, refreshing...');
+                await refreshZohoToken();
+                options.headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
+                continue;
+            }
+
+            return response;
+        } catch (err) {
+            lastError = err;
+            var waitTime = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s, 8s
+            console.log('Zoho request failed, retry ' + (attempt + 1) + '/' + maxRetries + ' in ' + (waitTime/1000) + 's:', err.message);
+            await sleep(waitTime);
+        }
+    }
+    throw lastError || new Error('Max retries exceeded');
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Fetch image from Zoho with queue and backoff
+async function fetchZohoImage(fileId) {
+    return queueZohoRequest(async () => {
+        if (!zohoAccessToken) await refreshZohoToken();
+
+        var imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+        var response = await fetchWithBackoff(imageUrl, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+
+        if (!response.ok) {
+            throw new Error('Image not found: ' + response.status);
+        }
+
+        var buffer = Buffer.from(await response.arrayBuffer());
+        var contentType = response.headers.get('content-type') || 'image/jpeg';
+
+        return { buffer, contentType };
+    });
+}
+
 async function initDB() {
     try {
         // Sales orders table - main order header info
@@ -722,54 +819,37 @@ app.get('/api/image/:fileId', async function(req, res) {
     try {
         var fileId = req.params.fileId;
 
-        // Check database cache first
+        // Check database cache first (no Zoho API call needed)
         var cacheResult = await pool.query(
             'SELECT image_data, content_type FROM image_cache WHERE file_id = $1',
             [fileId]
         );
 
         if (cacheResult.rows.length > 0) {
-            // Return cached image from database
+            // Return cached image from database - zero Zoho API calls
             res.set('Content-Type', cacheResult.rows[0].content_type || 'image/jpeg');
-            res.set('Cache-Control', 'public, max-age=31536000'); // Browser cache 1 year
+            res.set('Cache-Control', 'public, max-age=31536000');
             return res.send(cacheResult.rows[0].image_data);
         }
 
-        // Fetch from WorkDrive
-        if (!zohoAccessToken) await refreshZohoToken();
-        var imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
-        var response = await fetch(imageUrl, {
-            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-        });
+        // Fetch from Zoho using queue system with rate limiting and backoff
+        // This ensures we never exceed concurrency limits
+        var result = await fetchZohoImage(fileId);
 
-        if (!response.ok) {
-            // Try refreshing token and retry once
-            await refreshZohoToken();
-            response = await fetch(imageUrl, {
-                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-            });
-            if (!response.ok) {
-                return res.status(404).send('Image not found');
-            }
-        }
-
-        var buffer = Buffer.from(await response.arrayBuffer());
-        var contentType = response.headers.get('content-type') || 'image/jpeg';
-
-        // Store in database for persistent caching
+        // Store in database for persistent caching (future requests = zero Zoho calls)
         try {
             await pool.query(
                 'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
-                [fileId, buffer, contentType]
+                [fileId, result.buffer, result.contentType]
             );
             console.log('Cached image in database:', fileId);
         } catch (cacheErr) {
             console.log('Could not cache image in database:', cacheErr.message);
         }
 
-        res.set('Content-Type', contentType);
+        res.set('Content-Type', result.contentType);
         res.set('Cache-Control', 'public, max-age=31536000');
-        res.send(buffer);
+        res.send(result.buffer);
 
     } catch (err) {
         console.error('Image fetch error:', err.message);
@@ -778,9 +858,24 @@ app.get('/api/image/:fileId', async function(req, res) {
 });
 
 // Zoho status
-app.get('/api/zoho/status', function(req, res) {
+app.get('/api/zoho/status', async function(req, res) {
     var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
-    res.json({ configured: hasCredentials, connected: !!zohoAccessToken });
+
+    // Get cached image count
+    var cacheCount = await pool.query('SELECT COUNT(*) as count FROM image_cache');
+
+    res.json({
+        configured: hasCredentials,
+        connected: !!zohoAccessToken,
+        queue: {
+            activeRequests: activeZohoRequests,
+            queuedRequests: zohoRequestQueue.length,
+            maxConcurrent: MAX_CONCURRENT_ZOHO_REQUESTS
+        },
+        cache: {
+            cachedImages: parseInt(cacheCount.rows[0].count)
+        }
+    });
 });
 
 // ============================================
