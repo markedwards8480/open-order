@@ -156,8 +156,10 @@ async function refreshZohoToken() {
 app.get('/api/orders', async function(req, res) {
     try {
         var customer = req.query.customer;
+        var customers = req.query.customers; // comma-separated list for multi-select
         var commodity = req.query.commodity;
         var month = req.query.month; // Format: YYYY-MM
+        var year = req.query.year; // Year filter
         var status = req.query.status || 'Open';
         var style = req.query.style;
         var soNumber = req.query.so_number;
@@ -174,9 +176,20 @@ app.get('/api/orders', async function(req, res) {
             conditions.push('customer = $' + paramIndex++);
             params.push(customer);
         }
+        if (customers) {
+            var customerList = customers.split(',').map(c => c.trim()).filter(c => c);
+            if (customerList.length > 0) {
+                conditions.push('customer = ANY($' + paramIndex++ + ')');
+                params.push(customerList);
+            }
+        }
         if (commodity) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(commodity);
+        }
+        if (year) {
+            conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
+            params.push(parseInt(year));
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
@@ -247,8 +260,10 @@ app.get('/api/orders', async function(req, res) {
 app.get('/api/orders/by-so', async function(req, res) {
     try {
         var customer = req.query.customer;
+        var customers = req.query.customers;
         var commodity = req.query.commodity;
         var month = req.query.month;
+        var year = req.query.year;
         var status = req.query.status || 'Open';
 
         var conditions = [];
@@ -263,9 +278,20 @@ app.get('/api/orders/by-so', async function(req, res) {
             conditions.push('customer = $' + paramIndex++);
             params.push(customer);
         }
+        if (customers) {
+            var customerList = customers.split(',').map(c => c.trim()).filter(c => c);
+            if (customerList.length > 0) {
+                conditions.push('customer = ANY($' + paramIndex++ + ')');
+                params.push(customerList);
+            }
+        }
         if (commodity) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(commodity);
+        }
+        if (year) {
+            conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
+            params.push(parseInt(year));
         }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
@@ -306,7 +332,7 @@ app.get('/api/orders/by-so', async function(req, res) {
     }
 });
 
-// Get filter options (customers, commodities, months)
+// Get filter options (customers, commodities, months, years)
 app.get('/api/filters', async function(req, res) {
     try {
         var customersResult = await pool.query(`
@@ -335,10 +361,18 @@ app.get('/api/filters', async function(req, res) {
             ORDER BY MIN(delivery_date)
         `);
 
+        var yearsResult = await pool.query(`
+            SELECT DISTINCT EXTRACT(YEAR FROM delivery_date)::INTEGER as year
+            FROM order_items
+            WHERE delivery_date IS NOT NULL
+            ORDER BY year DESC
+        `);
+
         res.json({
             customers: customersResult.rows,
             commodities: commoditiesResult.rows,
-            months: monthsResult.rows
+            months: monthsResult.rows,
+            years: yearsResult.rows.map(r => r.year)
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -735,7 +769,9 @@ app.get('/', function(req, res) {
 });
 
 function getHTML() {
-    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Open Orders Dashboard</title><style>';
+    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Open Orders Dashboard</title>';
+    html += '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
+    html += '<style>';
 
     // Base styles - matching product catalog
     html += '*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",sans-serif;background:#f5f5f7;color:#1e3a5f;font-weight:400;-webkit-font-smoothing:antialiased}';
@@ -772,6 +808,23 @@ function getHTML() {
     html += '.month-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;padding-bottom:0.75rem;border-bottom:2px solid #1e3a5f}';
     html += '.month-header h2{font-size:1.5rem;font-weight:700;color:#1e3a5f;margin:0}';
     html += '.month-stats{display:flex;gap:1.5rem;font-size:0.875rem;color:#86868b}.month-stats span{font-weight:500}.month-stats .money{color:#0088c2;font-weight:600}';
+    html += '.commodity-section{margin-bottom:1.5rem}.commodity-section-header{font-size:1rem;font-weight:600;color:#86868b;margin-bottom:0.75rem;text-transform:uppercase;letter-spacing:0.05em}';
+
+    // Multi-select dropdown
+    html += '.multi-select{position:relative;min-width:180px}.multi-select-display{background:white;border:1px solid #d2d2d7;border-radius:8px;padding:0.5rem 0.75rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:0.875rem}.multi-select-display:hover{border-color:#0088c2}';
+    html += '.multi-select-arrow{font-size:0.625rem;color:#86868b;margin-left:0.5rem}';
+    html += '.multi-select-dropdown{position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #d2d2d7;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-height:300px;overflow-y:auto;display:none;z-index:100}';
+    html += '.multi-select-dropdown.open{display:block}';
+    html += '.multi-select-option{padding:0.5rem 0.75rem;cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-size:0.875rem}.multi-select-option:hover{background:#f5f5f7}';
+    html += '.multi-select-option input{margin:0}';
+    html += '.multi-select-actions{padding:0.5rem;border-top:1px solid #e0e0e0;display:flex;gap:0.5rem}.multi-select-actions button{flex:1;padding:0.375rem;font-size:0.75rem;border:none;border-radius:4px;cursor:pointer}.multi-select-actions .select-all{background:#e8f4fc;color:#0088c2}.multi-select-actions .clear-all{background:#f5f5f7;color:#86868b}';
+
+    // Charts
+    html += '.charts-container{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:1.5rem}';
+    html += '.chart-card{background:white;border-radius:16px;padding:1.5rem;border:1px solid rgba(0,0,0,0.04)}';
+    html += '.chart-card h3{font-size:1rem;font-weight:600;color:#1e3a5f;margin:0 0 1rem 0}';
+    html += '.chart-wrapper{height:300px;position:relative}';
+    html += '.export-btn{background:#0088c2;color:white;border:none;padding:0.625rem 1.25rem;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}.export-btn:hover{background:#006699}';
 
     // Style card
     html += '.style-card{background:white;border-radius:16px;overflow:hidden;cursor:pointer;transition:all 0.3s ease;border:1px solid rgba(0,0,0,0.04)}.style-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.12)}';
@@ -851,12 +904,13 @@ function getHTML() {
 
     // Filters bar
     html += '<div class="filters-bar">';
-    html += '<div class="filter-group"><label class="filter-label">Customer</label><select class="filter-select" id="customerFilter"><option value="">All Customers</option></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Year</label><select class="filter-select" id="yearFilter"></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Customer</label><div class="multi-select" id="customerMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'customer\')"><span id="customerDisplay">All Customers</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="customerDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Delivery</label><select class="filter-select" id="monthFilter"><option value="">All Months</option></select></div>';
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
     html += '</div>';
 
     // Main content
@@ -878,15 +932,26 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { filters: { customer: "", month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
+    html += 'var state = { filters: { year: new Date().getFullYear().toString(), customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
     html += 'try { var res = await fetch("/api/filters"); var data = await res.json();';
-    html += 'var custSelect = document.getElementById("customerFilter");';
-    html += 'data.customers.forEach(function(c) { var opt = document.createElement("option"); opt.value = c.customer; opt.textContent = c.customer + " (" + c.order_count + ")"; custSelect.appendChild(opt); });';
+    // Year filter
+    html += 'var yearSelect = document.getElementById("yearFilter");';
+    html += 'var currentYear = new Date().getFullYear();';
+    html += 'data.years = data.years || [];';
+    html += 'if (data.years.length === 0) { for(var y = currentYear; y >= currentYear - 3; y--) data.years.push(y); }';
+    html += 'data.years.forEach(function(y) { var opt = document.createElement("option"); opt.value = y; opt.textContent = y; if (y == currentYear) opt.selected = true; yearSelect.appendChild(opt); });';
+    html += 'var allOpt = document.createElement("option"); allOpt.value = ""; allOpt.textContent = "All Years"; yearSelect.appendChild(allOpt);';
+    // Customer multi-select
+    html += 'var custDropdown = document.getElementById("customerDropdown");';
+    html += 'custDropdown.innerHTML = \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllCustomers()">Select All</button><button class="clear-all" onclick="clearAllCustomers()">Clear All</button></div>\';';
+    html += 'data.customers.forEach(function(c) { var div = document.createElement("div"); div.className = "multi-select-option"; div.innerHTML = \'<input type="checkbox" value="\' + c.customer + \'" onchange="updateCustomerFilter()"><span>\' + c.customer + \' (\' + c.order_count + \')</span>\'; custDropdown.appendChild(div); });';
+    // Month filter
     html += 'var monthSelect = document.getElementById("monthFilter");';
     html += 'data.months.forEach(function(m) { var opt = document.createElement("option"); opt.value = m.month; opt.textContent = m.display_name; monthSelect.appendChild(opt); });';
+    // Commodity filter
     html += 'var commSelect = document.getElementById("commodityFilter");';
     html += 'data.commodities.forEach(function(c) { var opt = document.createElement("option"); opt.value = c.commodity; opt.textContent = c.commodity + " (" + c.style_count + ")"; commSelect.appendChild(opt); });';
     html += '} catch(e) { console.error("Error loading filters:", e); }}';
@@ -896,7 +961,8 @@ function getHTML() {
     html += 'document.getElementById("content").innerHTML = \'<div class="loading"><div class="spinner"></div></div>\';';
     html += 'try {';
     html += 'var params = new URLSearchParams();';
-    html += 'if (state.filters.customer) params.append("customer", state.filters.customer);';
+    html += 'if (state.filters.year) params.append("year", state.filters.year);';
+    html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join(","));';
     html += 'if (state.filters.month) params.append("month", state.filters.month);';
     html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
@@ -921,9 +987,10 @@ function getHTML() {
     html += 'var container = document.getElementById("content");';
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
+    html += 'else if (state.view === "charts") { renderChartsView(container, data); }';
     html += 'else { renderOrdersView(container, data.orders || []); }}';
 
-    // Render monthly view - group styles by delivery month
+    // Render monthly view - group styles by delivery month, then by commodity
     html += 'function renderMonthlyView(container, items) {';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3><p>Try adjusting your filters or import some data</p></div>\'; return; }';
     html += 'var monthGroups = {};';
@@ -931,12 +998,17 @@ function getHTML() {
     html += 'item.orders.forEach(function(o) {';
     html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toISOString().slice(0,7) : "no-date";';
     html += 'var monthLabel = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "long", year: "numeric"}) : "No Date";';
-    html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, items: {}, totalQty: 0, totalDollars: 0 };';
-    html += 'if (!monthGroups[monthKey].items[item.style_number]) {';
-    html += 'monthGroups[monthKey].items[item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0, order_count: 0 }; }';
-    html += 'monthGroups[monthKey].items[item.style_number].total_qty += o.quantity || 0;';
-    html += 'monthGroups[monthKey].items[item.style_number].total_dollars += o.total_amount || 0;';
-    html += 'monthGroups[monthKey].items[item.style_number].order_count += 1;';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, commodities: {}, totalQty: 0, totalDollars: 0, styleCount: 0 };';
+    html += 'if (!monthGroups[monthKey].commodities[comm]) monthGroups[monthKey].commodities[comm] = { items: {}, totalQty: 0, totalDollars: 0 };';
+    html += 'if (!monthGroups[monthKey].commodities[comm].items[item.style_number]) {';
+    html += 'monthGroups[monthKey].commodities[comm].items[item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0, order_count: 0 };';
+    html += 'monthGroups[monthKey].styleCount++; }';
+    html += 'monthGroups[monthKey].commodities[comm].items[item.style_number].total_qty += o.quantity || 0;';
+    html += 'monthGroups[monthKey].commodities[comm].items[item.style_number].total_dollars += o.total_amount || 0;';
+    html += 'monthGroups[monthKey].commodities[comm].items[item.style_number].order_count += 1;';
+    html += 'monthGroups[monthKey].commodities[comm].totalQty += o.quantity || 0;';
+    html += 'monthGroups[monthKey].commodities[comm].totalDollars += o.total_amount || 0;';
     html += 'monthGroups[monthKey].totalQty += o.quantity || 0;';
     html += 'monthGroups[monthKey].totalDollars += o.total_amount || 0;';
     html += '}); });';
@@ -944,16 +1016,20 @@ function getHTML() {
     html += 'var html = "";';
     html += 'sortedMonths.forEach(function(monthKey) {';
     html += 'var group = monthGroups[monthKey];';
-    html += 'var styleList = Object.values(group.items).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
     html += 'html += \'<div class="month-section"><div class="month-header"><h2>\' + group.label + \'</h2>\';';
-    html += 'html += \'<div class="month-stats"><span>\' + styleList.length + \' styles</span><span>\' + formatNumber(group.totalQty) + \' units</span><span class="money">$\' + formatNumber(Math.round(group.totalDollars)) + \'</span></div></div>\';';
+    html += 'html += \'<div class="month-stats"><span>\' + group.styleCount + \' styles</span><span>\' + formatNumber(group.totalQty) + \' units</span><span class="money">$\' + formatNumber(Math.round(group.totalDollars)) + \'</span></div></div>\';';
+    // Sort commodities by total dollars
+    html += 'var sortedComms = Object.keys(group.commodities).sort(function(a,b) { return group.commodities[b].totalDollars - group.commodities[a].totalDollars; });';
+    html += 'sortedComms.forEach(function(commName) {';
+    html += 'var commGroup = group.commodities[commName];';
+    html += 'var styleList = Object.values(commGroup.items).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    html += 'html += \'<div class="commodity-section"><div class="commodity-section-header">\' + escapeHtml(commName) + \' <span style="font-weight:400;color:#0088c2">(\' + styleList.length + \' styles · $\' + formatNumber(Math.round(commGroup.totalDollars)) + \')</span></div>\';';
     html += 'html += \'<div class="product-grid">\';';
     html += 'styleList.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
     html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'html += \'<div class="style-card" onclick="showStyleDetail(\\\'\'+ item.style_number +\'\\\')"><div class="style-image">\';';
-    html += 'if (item.commodity) html += \'<span class="commodity-badge">\' + escapeHtml(item.commodity) + \'</span>\';';
     html += 'html += \'<span class="style-badge">\' + item.order_count + \' order\' + (item.order_count > 1 ? "s" : "") + \'</span>\';';
     html += 'if (imgSrc) html += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
     html += 'else html += \'<span style="color:#ccc;font-size:3rem">👔</span>\';';
@@ -962,6 +1038,7 @@ function getHTML() {
     html += 'html += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.total_qty) + \'</div><div class="style-stat-label">Units</div></div>\';';
     html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
     html += 'html += \'</div></div>\'; });';
+    html += 'html += \'</div>\'; });';
     html += 'container.innerHTML = html; }';
 
     // Render styles view
@@ -1005,6 +1082,103 @@ function getHTML() {
     html += 'html += \'<div class="so-item-qty"><div class="qty">\' + formatNumber(item.quantity) + \' units</div><div class="amount">$\' + formatNumber(Math.round(item.total_amount)) + \'</div></div></div>\'; });';
     html += 'html += \'</div></div>\'; });';
     html += 'html += \'</div>\'; container.innerHTML = html; }';
+
+    // Render charts view
+    html += 'function renderChartsView(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for charts</h3><p>Import data to see visualizations</p></div>\'; return; }';
+    html += 'var html = \'<button class="export-btn" onclick="exportToExcel()">📥 Export to Excel</button>\';';
+    html += 'html += \'<div class="charts-container">\';';
+    // Monthly trend data
+    html += 'var monthlyData = {}; var customerData = {}; var commodityData = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "short", year: "2-digit"}) : "TBD";';
+    html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = { units: 0, dollars: 0 };';
+    html += 'monthlyData[monthKey].units += o.quantity || 0;';
+    html += 'monthlyData[monthKey].dollars += o.total_amount || 0;';
+    html += 'var cust = o.customer || "Unknown";';
+    html += 'if (!customerData[cust]) customerData[cust] = 0;';
+    html += 'customerData[cust] += o.total_amount || 0;';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
+    html += 'commodityData[comm] += o.total_amount || 0;';
+    html += '}); });';
+    // Monthly chart placeholder
+    html += 'html += \'<div class="chart-card"><h3>📈 Monthly Trend</h3><div class="chart-wrapper"><canvas id="monthlyChart"></canvas></div></div>\';';
+    // Customer pie chart placeholder
+    html += 'html += \'<div class="chart-card"><h3>👥 Top Customers</h3><div class="chart-wrapper"><canvas id="customerChart"></canvas></div></div>\';';
+    // Commodity chart placeholder
+    html += 'html += \'<div class="chart-card"><h3>📦 By Commodity</h3><div class="chart-wrapper"><canvas id="commodityChart"></canvas></div></div>\';';
+    html += 'html += \'</div>\';';
+    html += 'container.innerHTML = html;';
+    // Render charts
+    html += 'setTimeout(function() { renderCharts(monthlyData, customerData, commodityData); }, 100); }';
+
+    // Render charts with Chart.js
+    html += 'function renderCharts(monthlyData, customerData, commodityData) {';
+    html += 'var months = Object.keys(monthlyData);';
+    html += 'var monthlyDollars = months.map(function(m) { return Math.round(monthlyData[m].dollars); });';
+    // Monthly bar chart
+    html += 'new Chart(document.getElementById("monthlyChart"), { type: "bar", data: { labels: months, datasets: [{ label: "Dollars", data: monthlyDollars, backgroundColor: "#0088c2" }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function(v) { return "$" + (v/1000).toFixed(0) + "K"; } } } } } });';
+    // Customer pie chart - top 6
+    html += 'var custEntries = Object.entries(customerData).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 6);';
+    html += 'var custLabels = custEntries.map(function(e) { return e[0]; });';
+    html += 'var custValues = custEntries.map(function(e) { return Math.round(e[1]); });';
+    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#86868b", "#c7d1d9", "#f5f5f7"];';
+    html += 'new Chart(document.getElementById("customerChart"), { type: "doughnut", data: { labels: custLabels, datasets: [{ data: custValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
+    // Commodity pie chart
+    html += 'var commEntries = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
+    html += 'var commLabels = commEntries.map(function(e) { return e[0]; });';
+    html += 'var commValues = commEntries.map(function(e) { return Math.round(e[1]); });';
+    html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors.concat(["#2d5a87", "#66b3d9", "#003d5c"]) }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
+    html += '}';
+
+    // Multi-select functions
+    html += 'function toggleMultiSelect(type) {';
+    html += 'var dropdown = document.getElementById(type + "Dropdown");';
+    html += 'dropdown.classList.toggle("open");';
+    html += 'document.addEventListener("click", function closeDropdown(e) { if (!e.target.closest(".multi-select")) { dropdown.classList.remove("open"); document.removeEventListener("click", closeDropdown); } }); }';
+
+    html += 'function updateCustomerFilter() {';
+    html += 'var checkboxes = document.querySelectorAll("#customerDropdown input[type=checkbox]:checked");';
+    html += 'state.filters.customers = Array.from(checkboxes).map(function(cb) { return cb.value; });';
+    html += 'var display = document.getElementById("customerDisplay");';
+    html += 'if (state.filters.customers.length === 0) display.textContent = "All Customers";';
+    html += 'else if (state.filters.customers.length === 1) display.textContent = state.filters.customers[0];';
+    html += 'else display.textContent = state.filters.customers.length + " selected";';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    html += 'function selectAllCustomers() {';
+    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = true; });';
+    html += 'updateCustomerFilter(); }';
+
+    html += 'function clearAllCustomers() {';
+    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'updateCustomerFilter(); }';
+
+    // Export to Excel
+    html += 'function exportToExcel() {';
+    html += 'var items = state.data.items || [];';
+    html += 'var csv = "Style,Style Name,Commodity,Customer,SO#,Delivery Date,Qty,Amount\\n";';
+    html += 'items.forEach(function(item) {';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'var row = [';
+    html += '"\\"" + (item.style_number || "").replace(/"/g, \'"\') + "\\""';
+    html += ',"\\"" + (item.style_name || "").replace(/"/g, \'"\') + "\\""';
+    html += ',"\\"" + (item.commodity || "").replace(/"/g, \'"\') + "\\""';
+    html += ',"\\"" + (o.customer || "").replace(/"/g, \'"\') + "\\""';
+    html += ',"\\"" + (o.so_number || "").replace(/"/g, \'"\') + "\\""';
+    html += ',o.delivery_date || ""';
+    html += ',o.quantity || 0';
+    html += ',o.total_amount || 0';
+    html += '].join(",");';
+    html += 'csv += row + "\\n";';
+    html += '}); });';
+    html += 'var blob = new Blob([csv], { type: "text/csv" });';
+    html += 'var url = URL.createObjectURL(blob);';
+    html += 'var a = document.createElement("a"); a.href = url; a.download = "open_orders_export.csv"; a.click(); }';
 
     // Toggle SO expansion
     html += 'function toggleSO(idx) { var el = document.getElementById("so-items-" + idx); el.classList.toggle("expanded"); }';
@@ -1060,9 +1234,9 @@ function getHTML() {
     html += '} catch(e) { document.getElementById("uploadStatus").textContent = "Error: " + e.message; }}';
 
     // Filter handlers
-    html += 'document.getElementById("customerFilter").addEventListener("change", function(e) { state.filters.customer = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearBtn(); loadData(); });';
-    html += 'document.getElementById("monthFilter").addEventListener("change", function(e) { state.filters.month = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearBtn(); loadData(); });';
-    html += 'document.getElementById("commodityFilter").addEventListener("change", function(e) { state.filters.commodity = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearBtn(); loadData(); });';
+    html += 'document.getElementById("yearFilter").addEventListener("change", function(e) { state.filters.year = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    html += 'document.getElementById("monthFilter").addEventListener("change", function(e) { state.filters.month = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    html += 'document.getElementById("commodityFilter").addEventListener("change", function(e) { state.filters.commodity = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
 
     // Status toggle
     html += 'document.querySelectorAll(".status-btn").forEach(function(btn) { btn.addEventListener("click", function() {';
@@ -1075,12 +1249,16 @@ function getHTML() {
     html += 'btn.classList.add("active"); state.view = btn.dataset.view; loadData(); }); });';
 
     // Clear filters
-    html += 'function clearFilters() { state.filters = { customer: "", month: "", commodity: "", status: state.filters.status };';
-    html += 'document.getElementById("customerFilter").value = ""; document.getElementById("customerFilter").classList.remove("active");';
+    html += 'function clearFilters() {';
+    html += 'var currentYear = new Date().getFullYear().toString();';
+    html += 'state.filters = { year: currentYear, customers: [], month: "", commodity: "", status: state.filters.status };';
+    html += 'document.getElementById("yearFilter").value = currentYear; document.getElementById("yearFilter").classList.remove("active");';
+    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
     html += 'document.getElementById("monthFilter").value = ""; document.getElementById("monthFilter").classList.remove("active");';
     html += 'document.getElementById("commodityFilter").value = ""; document.getElementById("commodityFilter").classList.remove("active");';
-    html += 'updateClearBtn(); loadData(); }';
-    html += 'function updateClearBtn() { var hasFilters = state.filters.customer || state.filters.month || state.filters.commodity;';
+    html += 'updateClearButton(); loadData(); }';
+    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.month || state.filters.commodity || (state.filters.year && state.filters.year != new Date().getFullYear().toString());';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
 
     // Chat
