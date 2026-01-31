@@ -118,31 +118,39 @@ async function fetchZohoImage(fileId) {
             }
         }
 
-        // Use the accelerated download endpoint (matches CSV URL format: download-accl.zoho.com)
-        var imageUrl = 'https://download-accl.zoho.com/v1/workdrive/download/' + fileId;
-        var response = await fetchWithBackoff(imageUrl, {
-            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-        });
+        // Try multiple Zoho endpoints - different ones work for different file types/permissions
+        var endpoints = [
+            'https://workdrive.zoho.com/api/v1/download/' + fileId,
+            'https://download-accl.zoho.com/v1/workdrive/download/' + fileId,
+            'https://workdrive.zoho.com/api/v1/files/' + fileId + '/content'
+        ];
 
-        // If accelerated endpoint fails, try standard API endpoint as fallback
-        if (!response.ok && (response.status === 404 || response.status === 400)) {
-            console.log('Trying fallback URL for:', fileId);
-            imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
-            response = await fetchWithBackoff(imageUrl, {
-                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-            });
+        var lastError = null;
+        for (var endpoint of endpoints) {
+            try {
+                var response = await fetch(endpoint, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
+
+                if (response.ok) {
+                    var buffer = Buffer.from(await response.arrayBuffer());
+                    var contentType = response.headers.get('content-type') || 'image/jpeg';
+                    console.log('✓ Image fetched from:', endpoint.split('/')[2]);
+                    return { buffer, contentType };
+                }
+
+                if (response.status !== 404 && response.status !== 400) {
+                    // Log non-404/400 errors for debugging
+                    var errorText = await response.text().catch(() => '');
+                    console.log('Endpoint', endpoint.split('/')[2], 'returned', response.status, errorText.substring(0, 100));
+                }
+            } catch (e) {
+                lastError = e;
+            }
         }
 
-        if (!response.ok) {
-            var errorText = await response.text().catch(() => 'Unknown error');
-            console.error('Zoho image error:', fileId, response.status, errorText.substring(0, 200));
-            throw new Error('Image fetch failed: ' + response.status);
-        }
-
-        var buffer = Buffer.from(await response.arrayBuffer());
-        var contentType = response.headers.get('content-type') || 'image/jpeg';
-
-        return { buffer, contentType };
+        console.error('All endpoints failed for:', fileId);
+        throw lastError || new Error('All Zoho endpoints failed');
     });
 }
 
@@ -342,8 +350,10 @@ app.get('/api/orders', async function(req, res) {
 
         // Debug logging
         console.log('=== /api/orders DEBUG ===');
+        console.log('Fiscal Year param received:', fiscalYear);
         console.log('Where clause:', whereClause);
-        console.log('Params:', params);
+        console.log('Params:', JSON.stringify(params));
+        console.log('Conditions:', JSON.stringify(conditions));
 
         var query = `
             SELECT
