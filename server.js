@@ -2,22 +2,13 @@ const express = require('express');
 const { Pool } = require('pg');
 const multer = require('multer');
 const session = require('express-session');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
 
-// Image cache directory (Railway Volume mount point)
-const IMAGE_CACHE_DIR = process.env.IMAGE_CACHE_DIR || '/cache';
-
-// Ensure cache directory exists
-try {
-    if (!fs.existsSync(IMAGE_CACHE_DIR)) {
-        fs.mkdirSync(IMAGE_CACHE_DIR, { recursive: true });
-        console.log('Created image cache directory:', IMAGE_CACHE_DIR);
-    }
-} catch (err) {
-    console.log('Note: Image cache directory not available, will use direct Zoho API calls');
-}
+// All data is stored server-side in PostgreSQL:
+// - Order data in order_items and sales_orders tables
+// - Images cached in image_cache table (fetched once from Zoho, then stored)
+// - Zoho tokens in zoho_tokens table
+// No local filesystem or browser caching is used for persistence
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -101,6 +92,16 @@ async function initDB() {
             error_message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
+
+        // Image cache table - store images in database for persistence
+        await pool.query(`CREATE TABLE IF NOT EXISTS image_cache (
+            id SERIAL PRIMARY KEY,
+            file_id VARCHAR(100) UNIQUE NOT NULL,
+            image_data BYTEA NOT NULL,
+            content_type VARCHAR(50) DEFAULT 'image/jpeg',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`);
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_image_cache_file_id ON image_cache(file_id)');
 
         // Load stored Zoho token
         var tokenResult = await pool.query('SELECT * FROM zoho_tokens ORDER BY id DESC LIMIT 1');
@@ -720,11 +721,18 @@ For months, accept formats like "June", "Jun 2025", "June 2025" and convert to Y
 app.get('/api/image/:fileId', async function(req, res) {
     try {
         var fileId = req.params.fileId;
-        var cachePath = path.join(IMAGE_CACHE_DIR, fileId + '.jpg');
 
-        // Check cache first
-        if (fs.existsSync(cachePath)) {
-            return res.sendFile(cachePath);
+        // Check database cache first
+        var cacheResult = await pool.query(
+            'SELECT image_data, content_type FROM image_cache WHERE file_id = $1',
+            [fileId]
+        );
+
+        if (cacheResult.rows.length > 0) {
+            // Return cached image from database
+            res.set('Content-Type', cacheResult.rows[0].content_type || 'image/jpeg');
+            res.set('Cache-Control', 'public, max-age=31536000'); // Browser cache 1 year
+            return res.send(cacheResult.rows[0].image_data);
         }
 
         // Fetch from WorkDrive
@@ -735,22 +743,36 @@ app.get('/api/image/:fileId', async function(req, res) {
         });
 
         if (!response.ok) {
-            return res.status(404).send('Image not found');
+            // Try refreshing token and retry once
+            await refreshZohoToken();
+            response = await fetch(imageUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+            if (!response.ok) {
+                return res.status(404).send('Image not found');
+            }
         }
 
         var buffer = Buffer.from(await response.arrayBuffer());
+        var contentType = response.headers.get('content-type') || 'image/jpeg';
 
-        // Cache it
+        // Store in database for persistent caching
         try {
-            fs.writeFileSync(cachePath, buffer);
-        } catch (e) {
-            console.log('Could not cache image:', e.message);
+            await pool.query(
+                'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
+                [fileId, buffer, contentType]
+            );
+            console.log('Cached image in database:', fileId);
+        } catch (cacheErr) {
+            console.log('Could not cache image in database:', cacheErr.message);
         }
 
-        res.set('Content-Type', 'image/jpeg');
+        res.set('Content-Type', contentType);
+        res.set('Cache-Control', 'public, max-age=31536000');
         res.send(buffer);
 
     } catch (err) {
+        console.error('Image fetch error:', err.message);
         res.status(500).send('Error loading image');
     }
 });
