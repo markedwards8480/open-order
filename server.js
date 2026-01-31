@@ -1079,7 +1079,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { filters: { year: new Date().getFullYear().toString(), customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
+    html += 'var state = { filters: { year: "", customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -1089,8 +1089,8 @@ function getHTML() {
     html += 'var currentYear = new Date().getFullYear();';
     html += 'data.years = data.years || [];';
     html += 'if (data.years.length === 0) { for(var y = currentYear; y >= currentYear - 3; y--) data.years.push(y); }';
-    html += 'data.years.forEach(function(y) { var opt = document.createElement("option"); opt.value = y; opt.textContent = y; if (y == currentYear) opt.selected = true; yearSelect.appendChild(opt); });';
-    html += 'var allOpt = document.createElement("option"); allOpt.value = ""; allOpt.textContent = "All Years"; yearSelect.appendChild(allOpt);';
+    html += 'var allOpt = document.createElement("option"); allOpt.value = ""; allOpt.textContent = "All Years"; allOpt.selected = true; yearSelect.appendChild(allOpt);';
+    html += 'data.years.forEach(function(y) { var opt = document.createElement("option"); opt.value = y; opt.textContent = y; yearSelect.appendChild(opt); });';
     // Customer multi-select
     html += 'var custDropdown = document.getElementById("customerDropdown");';
     html += 'custDropdown.innerHTML = \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllCustomers()">Select All</button><button class="clear-all" onclick="clearAllCustomers()">Clear All</button></div>\';';
@@ -1444,9 +1444,8 @@ function getHTML() {
 
     // Clear filters
     html += 'function clearFilters() {';
-    html += 'var currentYear = new Date().getFullYear().toString();';
-    html += 'state.filters = { year: currentYear, customers: [], month: "", commodity: "", status: state.filters.status };';
-    html += 'document.getElementById("yearFilter").value = currentYear; document.getElementById("yearFilter").classList.remove("active");';
+    html += 'state.filters = { year: "", customers: [], month: "", commodity: "", status: state.filters.status };';
+    html += 'document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active");';
     html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
     html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
     html += 'document.getElementById("monthFilter").value = ""; document.getElementById("monthFilter").classList.remove("active");';
