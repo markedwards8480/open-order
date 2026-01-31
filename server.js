@@ -963,6 +963,41 @@ app.get('/api/debug/dates', async function(req, res) {
     }
 });
 
+// Debug endpoint to check a specific style's image
+app.get('/api/debug/style/:styleNumber', async function(req, res) {
+    try {
+        var result = await pool.query(
+            'SELECT DISTINCT style_number, style_name, image_url FROM order_items WHERE style_number = $1',
+            [req.params.styleNumber]
+        );
+        if (result.rows.length === 0) {
+            return res.json({ error: 'Style not found', styleNumber: req.params.styleNumber });
+        }
+        var style = result.rows[0];
+        var imageUrl = style.image_url;
+        var fileId = null;
+        if (imageUrl) {
+            var match = imageUrl.match(/\/download\/([a-zA-Z0-9]+)/);
+            if (match) fileId = match[1];
+        }
+        // Check if cached
+        var cached = false;
+        if (fileId) {
+            var cacheCheck = await pool.query('SELECT file_id FROM image_cache WHERE file_id = $1', [fileId]);
+            cached = cacheCheck.rows.length > 0;
+        }
+        res.json({
+            styleNumber: style.style_number,
+            styleName: style.style_name,
+            imageUrl: imageUrl || 'NO IMAGE URL IN DATA',
+            extractedFileId: fileId || 'COULD NOT EXTRACT',
+            cached: cached
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ============================================
 // MAIN HTML PAGE
 // ============================================
