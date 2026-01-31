@@ -1355,24 +1355,27 @@ function getHTML() {
 
     // Toggle month collapse/expand
     html += 'function toggleMonth(monthKey) {';
-    html += 'var header = document.querySelector("#month-" + monthKey + " .month-header");';
+    html += 'var section = document.getElementById("month-" + monthKey);';
+    html += 'if (!section) return;';
+    html += 'var header = section.querySelector(".month-header");';
     html += 'var body = document.getElementById("month-body-" + monthKey);';
-    html += 'header.classList.toggle("collapsed");';
-    html += 'body.classList.toggle("collapsed"); }';
+    html += 'if (header) header.classList.toggle("collapsed");';
+    html += 'if (body) body.classList.toggle("collapsed"); }';
 
     // Toggle commodity collapse/expand
     html += 'function toggleCommodity(commId) {';
-    html += 'var header = document.querySelector("[onclick*=\'" + commId + "\\\'"]");';
     html += 'var body = document.getElementById("comm-body-" + commId);';
-    html += 'header.classList.toggle("collapsed");';
-    html += 'body.classList.toggle("collapsed"); }';
+    html += 'if (!body) return;';
+    html += 'var section = body.closest(".commodity-section");';
+    html += 'var header = section ? section.querySelector(".commodity-header") : null;';
+    html += 'if (header) header.classList.toggle("collapsed");';
+    html += 'if (body) body.classList.toggle("collapsed"); }';
 
     // Scroll to month from timeline
     html += 'function scrollToMonth(monthKey) {';
     html += 'var el = document.getElementById("month-" + monthKey);';
-    html += 'if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); }';
-    html += 'document.querySelectorAll(".timeline-month").forEach(function(m) { m.classList.remove("active"); });';
-    html += 'event.target.closest(".timeline-month").classList.add("active"); }';
+    html += 'if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });';
+    html += 'document.querySelectorAll(".timeline-month").forEach(function(m) { m.classList.remove("active"); }); }';
 
     // Show style detail
     html += 'async function showStyleDetail(styleNumber) {';
