@@ -111,7 +111,12 @@ function sleep(ms) {
 // Fetch image from Zoho with queue and backoff
 async function fetchZohoImage(fileId) {
     return queueZohoRequest(async () => {
-        if (!zohoAccessToken) await refreshZohoToken();
+        if (!zohoAccessToken) {
+            var tokenResult = await refreshZohoToken();
+            if (!tokenResult.success) {
+                throw new Error('Zoho auth failed: ' + tokenResult.error);
+            }
+        }
 
         var imageUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
         var response = await fetchWithBackoff(imageUrl, {
@@ -119,7 +124,9 @@ async function fetchZohoImage(fileId) {
         });
 
         if (!response.ok) {
-            throw new Error('Image not found: ' + response.status);
+            var errorText = await response.text().catch(() => 'Unknown error');
+            console.error('Zoho image error:', fileId, response.status, errorText.substring(0, 200));
+            throw new Error('Image fetch failed: ' + response.status);
         }
 
         var buffer = Buffer.from(await response.arrayBuffer());
@@ -913,8 +920,9 @@ app.get('/api/image/:fileId', async function(req, res) {
         res.send(result.buffer);
 
     } catch (err) {
-        console.error('Image fetch error:', err.message);
-        res.status(500).send('Error loading image');
+        console.error('Image fetch error for', req.params.fileId + ':', err.message);
+        // Return a placeholder instead of error so page doesn't break
+        res.status(500).json({ error: err.message, fileId: req.params.fileId });
     }
 });
 
