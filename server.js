@@ -2339,7 +2339,14 @@ function getHTML() {
     // Dashboard view - hybrid charts + products
     html += 'function renderDashboardView(container, data) {';
     html += 'var items = data.items || [];';
-    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for dashboard</h3><p>Import data to see the dashboard</p></div>\'; return; }';
+    // Show clear buttons even when no data (so user can get back)
+    html += 'if (items.length === 0) {';
+    html += 'var emptyHtml = \'<div class="empty-state"><h3>No data found</h3><p>Try adjusting your filters</p>\';';
+    html += 'if (state.filters.commodity) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:1rem" onclick="clearCommodityFilter()">✕ Clear commodity: \' + state.filters.commodity + \'</button>\';';
+    html += 'if (state.filters.customers.length > 0) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:0.5rem" onclick="clearCustomerFilter()">✕ Clear customer: \' + state.filters.customers[0] + \'</button>\';';
+    html += 'if (state.filters.month) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:0.5rem" onclick="clearMonthFilter()">✕ Clear month filter</button>\';';
+    html += 'emptyHtml += \'</div>\';';
+    html += 'container.innerHTML = emptyHtml; return; }';
     // Use full breakdown data from API (not limited to 500 styles)
     html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
     // Commodity data from full breakdown
