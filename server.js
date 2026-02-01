@@ -95,6 +95,13 @@ async function initDB() {
             delivery_date DATE,
             status VARCHAR(50) DEFAULT 'Open',
             image_url TEXT,
+            po_number VARCHAR(100),
+            vendor_name VARCHAR(255),
+            po_status VARCHAR(50),
+            po_quantity INTEGER DEFAULT 0,
+            po_unit_price DECIMAL(10,2) DEFAULT 0,
+            po_total DECIMAL(12,2) DEFAULT 0,
+            po_warehouse_date DATE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
@@ -106,6 +113,9 @@ async function initDB() {
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_style ON order_items(style_number)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_so ON order_items(so_number)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_vendor ON order_items(vendor_name)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_po ON order_items(po_number)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_po_status ON order_items(po_status)');
 
         // Zoho tokens table (shared pattern)
         await pool.query(`CREATE TABLE IF NOT EXISTS zoho_tokens (
@@ -490,6 +500,104 @@ app.get('/api/filters', async function(req, res) {
     }
 });
 
+// Get PO filters (vendors, commodities for PO view)
+app.get('/api/po/filters', async function(req, res) {
+    try {
+        var vendorsResult = await pool.query(`
+            SELECT vendor_name, COUNT(DISTINCT po_number) as po_count, SUM(po_total) as total_dollars
+            FROM order_items
+            WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_status = 'Open'
+            GROUP BY vendor_name
+            ORDER BY vendor_name
+        `);
+
+        var commoditiesResult = await pool.query(`
+            SELECT commodity, COUNT(DISTINCT style_number) as style_count
+            FROM order_items
+            WHERE po_status = 'Open' AND commodity IS NOT NULL AND commodity != ''
+            GROUP BY commodity
+            ORDER BY commodity
+        `);
+
+        res.json({
+            vendors: vendorsResult.rows,
+            commodities: commoditiesResult.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get PO data (grouped by style, like sales orders)
+app.get('/api/po/orders', async function(req, res) {
+    try {
+        var conditions = [];
+        var params = [];
+        var paramIndex = 1;
+
+        // Vendor filter
+        if (req.query.vendors) {
+            var vendors = req.query.vendors.split(',');
+            conditions.push('vendor_name IN (' + vendors.map(() => '$' + paramIndex++).join(',') + ')');
+            params.push(...vendors);
+        }
+
+        // Commodity filter
+        if (req.query.commodity) {
+            conditions.push('commodity = $' + paramIndex++);
+            params.push(req.query.commodity);
+        }
+
+        // PO Status filter (Open/Received)
+        if (req.query.status && req.query.status !== 'All') {
+            conditions.push('po_status = $' + paramIndex++);
+            params.push(req.query.status);
+        }
+
+        var whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+        // Get items grouped by style
+        var itemsResult = await pool.query(`
+            SELECT
+                style_number,
+                style_name,
+                commodity,
+                image_url,
+                vendor_name,
+                po_number,
+                po_status,
+                po_quantity,
+                po_unit_price,
+                po_total,
+                po_warehouse_date
+            FROM order_items
+            ${whereClause}
+            AND po_number IS NOT NULL AND po_number != ''
+            ORDER BY vendor_name, po_number, style_number
+        `, params);
+
+        // Get stats
+        var statsResult = await pool.query(`
+            SELECT
+                COUNT(DISTINCT po_number) as po_count,
+                COUNT(DISTINCT vendor_name) as vendor_count,
+                COUNT(DISTINCT style_number) as style_count,
+                COALESCE(SUM(po_quantity), 0) as total_qty,
+                COALESCE(SUM(po_total), 0) as total_dollars
+            FROM order_items
+            ${whereClause}
+            AND po_number IS NOT NULL AND po_number != ''
+        `, params);
+
+        res.json({
+            items: itemsResult.rows,
+            stats: statsResult.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Get dashboard summary stats
 app.get('/api/dashboard', async function(req, res) {
     try {
@@ -618,7 +726,15 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
             total_amount: findColumn(headers, ['total_fcy', 'total_bcy', 'total_amount', 'total', 'amount', 'line_total', 'ext_price', 'extended_price', 'total_price']),
             delivery_date: findColumn(headers, ['so_cancel_date', 'delivery_date', 'delivery', 'ship_date', 'due_date', 'eta', 'expected_date']),
             status: findColumn(headers, ['so_status', 'status', 'order_status', 'state']),
-            image_url: findColumn(headers, ['style_image', 'image_url', 'image', 'image_link', 'workdrive_link', 'picture', 'photo_url'])
+            image_url: findColumn(headers, ['style_image', 'image_url', 'image', 'image_link', 'workdrive_link', 'picture', 'photo_url']),
+            // PO columns
+            po_number: findColumn(headers, ['purchase_order_number', 'po_number', 'po', 'import_po']),
+            vendor_name: findColumn(headers, ['vendor_name', 'vendor', 'supplier', 'factory']),
+            po_status: findColumn(headers, ['po_status', 'purchase_status']),
+            po_quantity: findColumn(headers, ['po_quantity', 'po_qty']),
+            po_unit_price: findColumn(headers, ['po_price', 'po_unit_price', 'po_price_fcy']),
+            po_total: findColumn(headers, ['po_total_fcy', 'po_total', 'po_amount']),
+            po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse'])
         };
 
         console.log('Column mapping:', colMap);
@@ -660,7 +776,16 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
                 var status = getValue(values, colMap.status) || 'Open';
                 var imageUrl = getValue(values, colMap.image_url) || '';
 
-                // Normalize status - Open, Partial, Invoiced
+                // PO data
+                var poNumber = getValue(values, colMap.po_number) || '';
+                var vendorName = getValue(values, colMap.vendor_name) || '';
+                var poStatus = getValue(values, colMap.po_status) || '';
+                var poQuantity = parseNumber(getValue(values, colMap.po_quantity)) || 0;
+                var poUnitPrice = parseNumber(getValue(values, colMap.po_unit_price)) || 0;
+                var poTotal = parseNumber(getValue(values, colMap.po_total)) || 0;
+                var poWarehouseDate = parseDate(getValue(values, colMap.po_warehouse_date));
+
+                // Normalize SO status - Open, Partial, Invoiced
                 var statusLower = status.toLowerCase();
                 if (statusLower.includes('partial')) {
                     status = 'Partial';
@@ -670,10 +795,20 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
                     status = 'Open';
                 }
 
+                // Normalize PO status - Open, Received (Billed)
+                if (poStatus) {
+                    var poStatusLower = poStatus.toLowerCase();
+                    if (poStatusLower.includes('billed') || poStatusLower.includes('received') || poStatusLower.includes('complete')) {
+                        poStatus = 'Received';
+                    } else {
+                        poStatus = 'Open';
+                    }
+                }
+
                 await pool.query(`
-                    INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-                `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl]);
+                    INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
+                `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
 
                 imported++;
             } catch (rowErr) {
