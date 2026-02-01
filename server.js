@@ -113,6 +113,8 @@ async function initDB() {
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_style ON order_items(style_number)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_so ON order_items(so_number)');
+        // Add vendor_name column if it doesn't exist (migration)
+        await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255)`);
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_vendor ON order_items(vendor_name)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_po ON order_items(po_number)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_po_status ON order_items(po_status)');
