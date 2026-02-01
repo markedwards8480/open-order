@@ -1343,9 +1343,9 @@ function getHTML() {
     html += 'var grandTotal = 0;';
     html += 'items.forEach(function(item) {';
     html += 'item.orders.forEach(function(o) {';
-    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toISOString().slice(0,7) : "9999-99";';
-    html += 'var monthLabel = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "long", year: "numeric"}) : "No Date";';
-    html += 'var monthShort = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "short"}) : "TBD";';
+    html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "9999-99";';
+    html += 'var monthLabel = o.delivery_date ? formatMonthLabel(o.delivery_date.substring(0,7)) : "No Date";';
+    html += 'var monthShort = o.delivery_date ? formatMonthShort(o.delivery_date.substring(0,7)) : "TBD";';
     html += 'var comm = item.commodity || "Other";';
     html += 'var orderStatus = o.status || "Open";';
     html += 'if (!monthGroups[monthKey]) monthGroups[monthKey] = { label: monthLabel, shortLabel: monthShort, commodities: {}, totalQty: 0, totalDollars: 0, openDollars: 0, invoicedDollars: 0, styleCount: 0 };';
@@ -1444,7 +1444,7 @@ function getHTML() {
     html += 'var comm = item.commodity || "Other";';
     html += 'commodities.add(comm);';
     html += 'item.orders.forEach(function(o) {';
-    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toISOString().slice(0,7) : "TBD";';
+    html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "TBD";';
     html += 'months.add(monthKey);';
     html += 'var key = comm + "|" + monthKey;';
     html += 'if (!data[key]) data[key] = { dollars: 0, units: 0 };';
@@ -1477,7 +1477,7 @@ function getHTML() {
     html += 'out += \'<table class="summary-table"><thead><tr><th>Commodity</th>\';';
     // Month headers
     html += 'sortedMonths.forEach(function(m) {';
-    html += 'var label = m === "TBD" ? "TBD" : new Date(m + "-01").toLocaleDateString("en-US", {month: "short", year: "2-digit"});';
+    html += 'var label = m === "TBD" ? "TBD" : formatMonthShort(m);';
     html += 'out += \'<th>\' + label + \'</th>\'; });';
     html += 'out += \'<th class="row-total">Total</th></tr></thead><tbody>\';';
     // Data rows
@@ -1758,6 +1758,10 @@ function getHTML() {
     // Helpers
     html += 'function formatNumber(n) { return n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","); }';
     html += 'function escapeHtml(str) { if (!str) return ""; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }';
+    html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'var monthNamesFull = ["January","February","March","April","May","June","July","August","September","October","November","December"];';
+    html += 'function formatMonthLabel(ym) { var parts = ym.split("-"); return monthNamesFull[parseInt(parts[1])-1] + " " + parts[0]; }';
+    html += 'function formatMonthShort(ym) { var parts = ym.split("-"); return monthNames[parseInt(parts[1])-1] + " " + parts[0].slice(2); }';
 
     // Modal click outside
     html += 'document.getElementById("styleModal").addEventListener("click", function(e) { if (e.target === this) closeModal(); });';
