@@ -380,6 +380,66 @@ app.get('/api/orders', async function(req, res) {
         `;
         var monthlyResult = await pool.query(monthlyQuery, params);
 
+        // YoY Comparison: Get previous fiscal year data if a fiscal year is selected
+        var prevYearCommodity = [];
+        var prevYearCustomer = [];
+        var missingCustomers = [];
+
+        if (fiscalYear) {
+            var prevFY = parseInt(fiscalYear) - 1;
+            var prevFYStart = (prevFY - 1) + '-06-01';
+            var prevFYEnd = prevFY + '-05-31';
+
+            // Previous year commodity breakdown
+            var prevCommodityQuery = `
+                SELECT commodity, SUM(total_amount) as total_dollars
+                FROM order_items
+                WHERE delivery_date::date >= '${prevFYStart}'::date
+                AND delivery_date::date <= '${prevFYEnd}'::date
+                AND status IN ('Open', 'Partial', 'Invoiced')
+                GROUP BY commodity
+            `;
+            var prevCommodityResult = await pool.query(prevCommodityQuery);
+            prevYearCommodity = prevCommodityResult.rows;
+
+            // Previous year customer breakdown
+            var prevCustomerQuery = `
+                SELECT customer, SUM(total_amount) as total_dollars
+                FROM order_items
+                WHERE delivery_date::date >= '${prevFYStart}'::date
+                AND delivery_date::date <= '${prevFYEnd}'::date
+                AND status IN ('Open', 'Partial', 'Invoiced')
+                GROUP BY customer
+            `;
+            var prevCustomerResult = await pool.query(prevCustomerQuery);
+            prevYearCustomer = prevCustomerResult.rows;
+
+            // Missing customers: bought last year but not this year
+            var fyStart = (parseInt(fiscalYear) - 1) + '-06-01';
+            var fyEnd = fiscalYear + '-05-31';
+            var missingQuery = `
+                SELECT py.customer, py.total_dollars as prev_year_dollars, py.last_order
+                FROM (
+                    SELECT customer, SUM(total_amount) as total_dollars, MAX(delivery_date) as last_order
+                    FROM order_items
+                    WHERE delivery_date::date >= '${prevFYStart}'::date
+                    AND delivery_date::date <= '${prevFYEnd}'::date
+                    GROUP BY customer
+                ) py
+                LEFT JOIN (
+                    SELECT DISTINCT customer
+                    FROM order_items
+                    WHERE delivery_date::date >= '${fyStart}'::date
+                    AND delivery_date::date <= '${fyEnd}'::date
+                ) cy ON py.customer = cy.customer
+                WHERE cy.customer IS NULL
+                ORDER BY py.total_dollars DESC
+                LIMIT 10
+            `;
+            var missingResult = await pool.query(missingQuery);
+            missingCustomers = missingResult.rows;
+        }
+
         // Prevent browser caching of filtered results
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.set('Pragma', 'no-cache');
@@ -388,7 +448,11 @@ app.get('/api/orders', async function(req, res) {
             stats: statsResult.rows[0],
             commodityBreakdown: commodityResult.rows,
             customerBreakdown: customerResult.rows,
-            monthlyBreakdown: monthlyResult.rows
+            monthlyBreakdown: monthlyResult.rows,
+            prevYearCommodity: prevYearCommodity,
+            prevYearCustomer: prevYearCustomer,
+            missingCustomers: missingCustomers,
+            fiscalYear: fiscalYear
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1662,6 +1726,17 @@ function getHTML() {
     html += '.timeline-clear:hover{background:#d63030}';
     html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
     html += '.filter-clear-btn:hover{background:#d63030}';
+    // YoY comparison styles
+    html += '.treemap-yoy{font-size:0.6875rem;font-weight:700;margin-top:2px}';
+    // Missing customers styles
+    html += '.missing-customers{border:2px solid #ff3b30;background:#fff5f5}';
+    html += '.missing-list{display:flex;flex-direction:column;gap:4px}';
+    html += '.missing-item{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:white;border-radius:4px;font-size:0.75rem}';
+    html += '.missing-name{font-weight:600;color:#1e3a5f}';
+    html += '.missing-details{color:#86868b;font-size:0.6875rem}';
+    // Heat badge styles
+    html += '.heat-badge{position:absolute;top:4px;right:4px;font-size:1rem;z-index:1}';
+    html += '.dashboard-style-card{position:relative}';
 
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
@@ -2352,8 +2427,16 @@ function getHTML() {
     // Commodity data from full breakdown
     html += 'var commSorted = (data.commodityBreakdown || []).map(function(r) { return [r.commodity || "Other", parseFloat(r.total_dollars) || 0]; });';
     html += 'var total = commSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
+    // Previous year commodity lookup for YoY
+    html += 'var prevCommLookup = {};';
+    html += '(data.prevYearCommodity || []).forEach(function(r) { prevCommLookup[r.commodity] = parseFloat(r.total_dollars) || 0; });';
     // Customer data from full breakdown
     html += 'var custSorted = (data.customerBreakdown || []).map(function(r) { return [r.customer || "Unknown", parseFloat(r.total_dollars) || 0]; });';
+    // Previous year customer lookup for YoY
+    html += 'var prevCustLookup = {};';
+    html += '(data.prevYearCustomer || []).forEach(function(r) { prevCustLookup[r.customer] = parseFloat(r.total_dollars) || 0; });';
+    // Missing customers
+    html += 'var missingCustomers = data.missingCustomers || [];';
     // Monthly data from full breakdown
     html += 'var monthlyData = {};';
     html += '(data.monthlyBreakdown || []).forEach(function(r) {';
@@ -2392,9 +2475,14 @@ function getHTML() {
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
     html += 'var size = Math.max(Math.sqrt(pct) * 20, 8);';
+    html += 'var prevValue = prevCommLookup[comm] || 0;';
+    html += 'var yoyChange = prevValue > 0 ? ((value - prevValue) / prevValue * 100) : null;';
+    html += 'var yoyText = yoyChange !== null ? (yoyChange >= 0 ? "↑" : "↓") + Math.abs(yoyChange).toFixed(0) + "%" : "";';
+    html += 'var yoyColor = yoyChange === null ? "" : (yoyChange >= 0 ? "#00ff00" : "#ff6b6b");';
     html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 15) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
+    html += 'if (yoyText) out += \'<div class="treemap-yoy" style="color:\' + yoyColor + \'">\' + yoyText + \'</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
@@ -2407,14 +2495,32 @@ function getHTML() {
     html += 'topCust.forEach(function(entry, idx) {';
     html += 'var cust = entry[0], value = entry[1];';
     html += 'var pct = custTotal > 0 ? (value / custTotal * 100).toFixed(1) : 0;';
+    html += 'var prevValue = prevCustLookup[cust] || 0;';
+    html += 'var yoyChange = prevValue > 0 ? ((value - prevValue) / prevValue * 100) : null;';
+    html += 'var yoyText = yoyChange !== null ? (yoyChange >= 0 ? "↑" : "↓") + Math.abs(yoyChange).toFixed(0) + "%" : "";';
+    html += 'var yoyColor = yoyChange === null ? "#86868b" : (yoyChange >= 0 ? "#34c759" : "#ff3b30");';
     html += 'out += \'<div class="customer-bar" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="customer-name">\' + cust + \'</div>\';';
     html += 'out += \'<div class="customer-bar-fill" style="width:\' + pct + \'%;background:\' + colors[idx % colors.length] + \'"></div>\';';
-    html += 'out += \'<div class="customer-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div></div>\';';
+    html += 'out += \'<div class="customer-value">$\' + Math.round(value/1000).toLocaleString() + \'K\';';
+    html += 'if (yoyText) out += \' <span style="font-size:0.625rem;color:\' + yoyColor + \'">\' + yoyText + \'</span>\';';
+    html += 'out += \'</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     html += 'if (state.filters.customers.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCustomerFilter()">✕ Clear: \' + state.filters.customers[0] + \'</button>\'; }';
     html += 'out += \'</div>\';';
+    // Missing customers section
+    html += 'if (missingCustomers.length > 0) {';
+    html += 'var missingTotal = missingCustomers.reduce(function(a,c) { return a + (parseFloat(c.prev_year_dollars) || 0); }, 0);';
+    html += 'out += \'<div class="dashboard-card missing-customers"><h3>⚠️ Missing Customers <span style="font-size:0.75rem;color:#ff3b30">$\' + Math.round(missingTotal/1000).toLocaleString() + \'K last year</span></h3>\';';
+    html += 'out += \'<p style="font-size:0.75rem;color:#86868b;margin:0 0 0.5rem 0">Bought last FY but not this FY</p>\';';
+    html += 'out += \'<div class="missing-list">\';';
+    html += 'missingCustomers.slice(0,5).forEach(function(c) {';
+    html += 'var lastOrder = c.last_order ? new Date(c.last_order).toLocaleDateString("en-US", {month:"short", year:"numeric"}) : "Unknown";';
+    html += 'out += \'<div class="missing-item"><span class="missing-name">\' + c.customer + \'</span><span class="missing-details">Last: \' + lastOrder + \' · $\' + Math.round((parseFloat(c.prev_year_dollars)||0)/1000).toLocaleString() + \'K</span></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '}';
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
@@ -2423,11 +2529,14 @@ function getHTML() {
     html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var orderCount = item.order_count || (item.orders ? item.orders.length : 1);';
+    html += 'var heatBadge = orderCount >= 3 ? "🔥" : (orderCount === 1 ? "❄️" : "");';
     html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'if (heatBadge) out += \'<div class="heat-badge">\' + heatBadge + \'</div>\';';
     html += 'out += \'<div class="dashboard-style-img"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\x27none\\x27"></div>\';';
     html += 'out += \'<div class="dashboard-style-info">\';';
     html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
-    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \' <span style="color:#86868b;font-size:0.625rem">\' + orderCount + \' order\' + (orderCount !== 1 ? "s" : "") + \'</span></div>\';';
     html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
     html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
