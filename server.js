@@ -2376,9 +2376,9 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">🏆 Top Styles by Value</h3>\';';
+    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + sortedItems.length + \' styles)</span></h3>\';';
     html += 'out += \'<div class="dashboard-grid">\';';
-    html += 'sortedItems.slice(0, 15).forEach(function(item) {';
+    html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'out += \'<div class="dashboard-style-card" onclick="openStyleModal(\\x27\' + item.style_number + \'\\x27)">\';';
