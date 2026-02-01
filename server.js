@@ -1910,23 +1910,33 @@ function getHTML() {
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for charts</h3><p>Import data to see visualizations</p></div>\'; return; }';
     html += 'var html = \'<button class="export-btn" onclick="exportToExcel()">📥 Export to Excel</button>\';';
     html += 'html += \'<div class="charts-container">\';';
-    // Monthly trend data
-    html += 'var monthlyData = {}; var customerData = {}; var commodityData = {};';
+    // Build chart data - monthly by commodity (for stacked bar)
+    html += 'var monthlyData = {}; var customerData = {}; var commodityData = {}; var stackedData = {};';
+    html += 'var allMonths = new Set(); var allCommodities = new Set();';
     html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'allCommodities.add(comm);';
     html += 'item.orders.forEach(function(o) {';
-    html += 'var monthKey = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "short", year: "2-digit"}) : "TBD";';
+    html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "9999-99";';
+    html += 'allMonths.add(monthKey);';
     html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = { units: 0, dollars: 0 };';
     html += 'monthlyData[monthKey].units += o.quantity || 0;';
     html += 'monthlyData[monthKey].dollars += o.total_amount || 0;';
+    html += 'if (!stackedData[monthKey]) stackedData[monthKey] = {};';
+    html += 'if (!stackedData[monthKey][comm]) stackedData[monthKey][comm] = 0;';
+    html += 'stackedData[monthKey][comm] += o.total_amount || 0;';
     html += 'var cust = o.customer || "Unknown";';
     html += 'if (!customerData[cust]) customerData[cust] = 0;';
     html += 'customerData[cust] += o.total_amount || 0;';
-    html += 'var comm = item.commodity || "Other";';
     html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
     html += 'commodityData[comm] += o.total_amount || 0;';
     html += '}); });';
-    // Monthly chart placeholder
-    html += 'html += \'<div class="chart-card"><h3>📈 Monthly Trend</h3><div class="chart-wrapper"><canvas id="monthlyChart"></canvas></div></div>\';';
+    // Sort months
+    html += 'var sortedMonths = Array.from(allMonths).sort().filter(function(m) { return m !== "9999-99"; });';
+    // Stacked bar chart placeholder
+    html += 'html += \'<div class="chart-card" style="grid-column:span 2"><h3>📊 Monthly by Commodity (Stacked)</h3><div class="chart-wrapper" style="height:400px"><canvas id="stackedChart"></canvas></div></div>\';';
+    // Treemap placeholder
+    html += 'html += \'<div class="chart-card" style="grid-column:span 2"><h3>🗺️ Commodity Treemap</h3><div id="treemapContainer" style="height:400px;position:relative"></div></div>\';';
     // Customer pie chart placeholder
     html += 'html += \'<div class="chart-card"><h3>👥 Top Customers</h3><div class="chart-wrapper"><canvas id="customerChart"></canvas></div></div>\';';
     // Commodity chart placeholder
@@ -1934,25 +1944,45 @@ function getHTML() {
     html += 'html += \'</div>\';';
     html += 'container.innerHTML = html;';
     // Render charts
-    html += 'setTimeout(function() { renderCharts(monthlyData, customerData, commodityData); }, 100); }';
+    html += 'setTimeout(function() { renderCharts(monthlyData, customerData, commodityData, stackedData, sortedMonths, Array.from(allCommodities)); }, 100); }';
 
     // Render charts with Chart.js
-    html += 'function renderCharts(monthlyData, customerData, commodityData) {';
-    html += 'var months = Object.keys(monthlyData);';
-    html += 'var monthlyDollars = months.map(function(m) { return Math.round(monthlyData[m].dollars); });';
-    // Monthly bar chart
-    html += 'new Chart(document.getElementById("monthlyChart"), { type: "bar", data: { labels: months, datasets: [{ label: "Dollars", data: monthlyDollars, backgroundColor: "#0088c2" }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function(v) { return "$" + (v/1000).toFixed(0) + "K"; } } } } } });';
+    html += 'function renderCharts(monthlyData, customerData, commodityData, stackedData, sortedMonths, allCommodities) {';
+    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
+    // Format month labels
+    html += 'var monthLabels = sortedMonths.map(function(m) { var parts = m.split("-"); var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(parts[1])-1] + " " + parts[0].slice(2); });';
+    // Sort commodities by total value
+    html += 'var commSorted = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; }).map(function(e) { return e[0]; });';
+    // Build stacked datasets
+    html += 'var stackedDatasets = commSorted.map(function(comm, idx) {';
+    html += 'return { label: comm, data: sortedMonths.map(function(m) { return stackedData[m] && stackedData[m][comm] ? Math.round(stackedData[m][comm]) : 0; }), backgroundColor: colors[idx % colors.length] };';
+    html += '});';
+    // Stacked bar chart
+    html += 'new Chart(document.getElementById("stackedChart"), { type: "bar", data: { labels: monthLabels, datasets: stackedDatasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: function(v) { return "$" + (v/1000).toFixed(0) + "K"; } } } } } });';
+    // Treemap (using CSS boxes)
+    html += 'var treemapContainer = document.getElementById("treemapContainer");';
+    html += 'var total = Object.values(commodityData).reduce(function(a,b) { return a+b; }, 0);';
+    html += 'var treemapHtml = "";';
+    html += 'commSorted.forEach(function(comm, idx) {';
+    html += 'var value = commodityData[comm];';
+    html += 'var pct = (value / total * 100).toFixed(1);';
+    html += 'var size = Math.max(Math.sqrt(value / total) * 100, 8);';
+    html += 'treemapHtml += \'<div style="display:inline-block;width:\' + size + \'%;height:\' + size + \'%;min-width:60px;min-height:40px;background:\' + colors[idx % colors.length] + \';margin:2px;padding:8px;color:white;font-size:11px;border-radius:4px;overflow:hidden;vertical-align:top;box-sizing:border-box">\';';
+    html += 'treemapHtml += \'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\' + comm + \'</div>\';';
+    html += 'treemapHtml += \'<div style="opacity:0.8">$\' + (value/1000).toFixed(0) + \'K</div>\';';
+    html += 'treemapHtml += \'<div style="opacity:0.7;font-size:10px">\' + pct + \'%</div></div>\';';
+    html += '});';
+    html += 'treemapContainer.innerHTML = treemapHtml;';
     // Customer pie chart - top 6
     html += 'var custEntries = Object.entries(customerData).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 6);';
     html += 'var custLabels = custEntries.map(function(e) { return e[0]; });';
     html += 'var custValues = custEntries.map(function(e) { return Math.round(e[1]); });';
-    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#86868b", "#c7d1d9", "#f5f5f7"];';
     html += 'new Chart(document.getElementById("customerChart"), { type: "doughnut", data: { labels: custLabels, datasets: [{ data: custValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
     // Commodity pie chart
     html += 'var commEntries = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
     html += 'var commLabels = commEntries.map(function(e) { return e[0]; });';
     html += 'var commValues = commEntries.map(function(e) { return Math.round(e[1]); });';
-    html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors.concat(["#2d5a87", "#66b3d9", "#003d5c"]) }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
+    html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
     html += '}';
 
     // Multi-select functions
