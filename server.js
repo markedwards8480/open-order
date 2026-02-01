@@ -1627,6 +1627,8 @@ function getHTML() {
     html += '.timeline-units{font-size:0.5625rem;color:#86868b}';
     html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:0.375rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.75rem}';
     html += '.timeline-clear:hover{background:#d63030}';
+    html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
+    html += '.filter-clear-btn:hover{background:#d63030}';
 
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
@@ -2362,7 +2364,9 @@ function getHTML() {
     html += 'out += \'<div class="treemap-value">$\' + (value/1000).toFixed(0) + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
-    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';';
+    html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
+    html += 'out += \'</div>\';';
     // Top customers
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
     html += 'var custSorted = Object.entries(customerData).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 8);';
@@ -2375,7 +2379,9 @@ function getHTML() {
     html += 'out += \'<div class="customer-bar-fill" style="width:\' + pct + \'%;background:\' + colors[idx % colors.length] + \'"></div>\';';
     html += 'out += \'<div class="customer-value">$\' + (value/1000).toFixed(0) + \'K</div></div>\';';
     html += '});';
-    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';';
+    html += 'if (state.filters.customers.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCustomerFilter()">✕ Clear: \' + state.filters.customers[0] + \'</button>\'; }';
+    html += 'out += \'</div>\';';
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
@@ -2424,6 +2430,21 @@ function getHTML() {
     html += 'function clearMonthFilter() {';
     html += 'document.getElementById("monthFilter").value = "";';
     html += 'state.filters.month = "";';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Clear commodity filter from dashboard
+    html += 'function clearCommodityFilter() {';
+    html += 'document.getElementById("commodityFilter").value = "";';
+    html += 'state.filters.commodity = "";';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Clear customer filter from dashboard
+    html += 'function clearCustomerFilter() {';
+    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'state.filters.customers = [];';
+    html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
