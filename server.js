@@ -2242,7 +2242,7 @@ function getHTML() {
     html += 'var isExpanded = state.expandedRows[primary];';
     html += 'var rowClass = groupBy === "commodity" ? "comm-row-" + primary.toLowerCase().replace(/[^a-z]/g, "") : "";';
     html += 'if (groupBy === "commodity" && ["top","bottom","dress","sweater","jacket"].indexOf(primary.toLowerCase()) === -1) rowClass = "comm-row-other";';
-    html += 'out += \'<tr class="\' + rowClass + \'"><td><button class="expand-btn\' + (isExpanded ? " expanded" : "") + \'" data-expand="\' + primary.replace(/["\\']/g, "") + \'">▶</button>\' + escapeHtml(primary) + \'</td>\';';
+    html += 'out += \'<tr class="\' + rowClass + \'"><td><button class="expand-btn\' + (isExpanded ? " expanded" : "") + \'" data-expand="\' + primary.replace(/["\']/g, "") + \'">▶</button>\' + escapeHtml(primary) + \'</td>\';';
     html += 'sortedMonths.forEach(function(m) { var k = primary + "|" + m; var cell = mainData[k] || { dollars: 0, units: 0 }; out += \'<td><div class="summary-cell\' + (cell.dollars > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(cell.dollars) + \'</span><span class="units">\' + formatNumber(cell.units) + \' units</span></div></td>\'; });';
     html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(primaryTotals[primary].dollars) + \'</span><span class="units">\' + formatNumber(primaryTotals[primary].units) + \' units</span></div></td></tr>\';';
     // Expanded sub-rows
