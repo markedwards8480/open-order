@@ -221,6 +221,20 @@ app.get('/api/orders', async function(req, res) {
         var params = [];
         var paramIndex = 1;
 
+        // Check for includeFiscalYears setting to exclude old data
+        var settingsResult = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'includeFiscalYears'");
+        if (settingsResult.rows.length > 0 && settingsResult.rows[0].setting_value) {
+            var includedFYs = settingsResult.rows[0].setting_value.split(',').map(fy => parseInt(fy.trim())).filter(fy => !isNaN(fy));
+            if (includedFYs.length > 0) {
+                // Build OR conditions for each included FY date range
+                var fyConditions = includedFYs.map(function(fy) {
+                    return "(delivery_date::date >= '" + (fy - 1) + "-06-01'::date AND delivery_date::date <= '" + fy + "-05-31'::date)";
+                });
+                conditions.push('(' + fyConditions.join(' OR ') + ')');
+                console.log('Included FYs filter:', includedFYs.join(', '));
+            }
+        }
+
         if (status && status !== 'All') {
             // "Open" includes both Open and Partial statuses
             if (status === 'Open') {
@@ -489,12 +503,25 @@ app.get('/api/filters', async function(req, res) {
             ORDER BY fiscal_year DESC
         `);
 
+        // Filter fiscal years based on includeFiscalYears setting
+        var allFiscalYears = fiscalYearsResult.rows.map(r => r.fiscal_year);
+        var filteredFiscalYears = allFiscalYears;
+
+        var settingsResult = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'includeFiscalYears'");
+        if (settingsResult.rows.length > 0 && settingsResult.rows[0].setting_value) {
+            var includedFYs = settingsResult.rows[0].setting_value.split(',').map(fy => parseInt(fy.trim())).filter(fy => !isNaN(fy));
+            if (includedFYs.length > 0) {
+                filteredFiscalYears = allFiscalYears.filter(fy => includedFYs.includes(fy));
+            }
+        }
+
         res.json({
             customers: customersResult.rows,
             commodities: commoditiesResult.rows,
             months: monthsResult.rows,
             years: yearsResult.rows.map(r => r.year),
-            fiscalYears: fiscalYearsResult.rows.map(r => r.fiscal_year)
+            fiscalYears: filteredFiscalYears,
+            allFiscalYears: allFiscalYears // For settings modal
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1677,6 +1704,11 @@ function getHTML() {
     html += '<option value="">No Default (show all)</option>';
     html += '</select>';
     html += '</div>';
+    html += '<div style="margin-top:1.5rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Include Fiscal Years</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Only load data from selected fiscal years. Excluding old years speeds up the app.</p>';
+    html += '<div id="fyCheckboxes" style="display:flex;flex-wrap:wrap;gap:0.5rem"></div>';
+    html += '</div>';
     html += '<div style="margin-top:2rem;display:flex;gap:1rem">';
     html += '<button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>';
     html += '<button class="btn btn-secondary" onclick="closeSettingsModal()" style="flex:1">Cancel</button>';
@@ -2315,15 +2347,36 @@ function getHTML() {
     html += 'select.innerHTML = \'<option value="">No Default (show all)</option>\';';
     html += 'var fySelect = document.getElementById("fiscalYearFilter");';
     html += 'for (var i = 1; i < fySelect.options.length; i++) { var opt = fySelect.options[i]; select.innerHTML += \'<option value="\' + opt.value + \'">\' + opt.textContent + \'</option>\'; }';
-    html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) { if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear; });';
+    // Populate FY checkboxes from API (all fiscal years, not just filtered)
+    html += 'var fyCheckboxes = document.getElementById("fyCheckboxes");';
+    html += 'fyCheckboxes.innerHTML = "<span style=\\"color:#86868b;font-size:0.75rem\\">Loading...</span>";';
+    html += 'fetch("/api/filters").then(r => r.json()).then(function(filterData) {';
+    html += 'var allFYs = filterData.allFiscalYears || filterData.fiscalYears || [];';
+    html += 'fyCheckboxes.innerHTML = "";';
+    html += 'allFYs.forEach(function(fy) {';
+    html += 'fyCheckboxes.innerHTML += \'<label style="display:flex;align-items:center;gap:0.25rem;padding:0.5rem 0.75rem;background:#f0f4f8;border-radius:6px;cursor:pointer;font-size:0.875rem"><input type="checkbox" class="fy-include-cb" value="\' + fy + \'" checked> FY\' + fy + \'</label>\';';
+    html += '});';
+    // Now load settings to uncheck excluded FYs
+    html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
+    html += 'if (settings.includeFiscalYears) {';
+    html += 'var included = settings.includeFiscalYears.split(",");';
+    html += 'document.querySelectorAll(".fy-include-cb").forEach(function(cb) { cb.checked = included.includes(cb.value); });';
+    html += '}';
+    html += '});';
+    html += '});';
+    html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
+    html += 'if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear;';
+    html += '});';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
     html += 'var fy = document.getElementById("defaultFYSelect").value;';
+    html += 'var includedFYs = Array.from(document.querySelectorAll(".fy-include-cb:checked")).map(function(cb) { return cb.value; }).join(",");';
     html += 'try {';
     html += 'await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "defaultFiscalYear", value: fy }) });';
-    html += 'document.getElementById("settingsStatus").innerHTML = \'<span style="color:#34c759">✓ Settings saved!</span>\';';
-    html += 'setTimeout(closeSettingsModal, 1000);';
+    html += 'await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "includeFiscalYears", value: includedFYs }) });';
+    html += 'document.getElementById("settingsStatus").innerHTML = \'<span style="color:#34c759">✓ Settings saved! Reloading...</span>\';';
+    html += 'setTimeout(function() { location.reload(); }, 1000);';
     html += '} catch(e) { document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
     html += '}';
 
