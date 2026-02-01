@@ -1797,6 +1797,17 @@ function getHTML() {
     html += '.summary-table .comm-row-sweater td:first-child{border-left:4px solid #ff9500}';
     html += '.summary-table .comm-row-jacket td:first-child{border-left:4px solid #ff3b30}';
     html += '.summary-table .comm-row-other td:first-child{border-left:4px solid #86868b}';
+    // Summary toggle and expandable rows
+    html += '.summary-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}';
+    html += '.summary-toggle{display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#1e3a5f}';
+    html += '.summary-toggle-btns{display:flex;background:#f0f0f0;border-radius:8px;padding:2px}';
+    html += '.summary-toggle-btn{padding:0.375rem 0.75rem;border-radius:6px;border:none;background:transparent;font-size:0.8125rem;color:#86868b;cursor:pointer;transition:all 0.2s}';
+    html += '.summary-toggle-btn.active{background:#0088c2;color:white;font-weight:500}';
+    html += '.expand-btn{background:none;border:none;cursor:pointer;font-size:0.75rem;color:#86868b;padding:0.25rem;margin-right:0.25rem;transition:transform 0.2s}';
+    html += '.expand-btn.expanded{transform:rotate(90deg)}';
+    html += '.summary-subrow{background:#fafafa}';
+    html += '.summary-subrow td{font-size:0.75rem !important;padding:0.5rem 1rem !important}';
+    html += '.summary-subrow td:first-child{padding-left:2rem !important;font-weight:400 !important;color:#666}';
 
     // Style card
     html += '.style-card{background:white;border-radius:16px;overflow:hidden;cursor:pointer;transition:all 0.3s ease;border:1px solid rgba(0,0,0,0.04)}.style-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.12)}';
@@ -1940,7 +1951,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null };';
+    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {} };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -2171,72 +2182,75 @@ function getHTML() {
     html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
     html += 'html += \'</div>\'; container.innerHTML = html; }';
 
-    // Render summary view - matrix of commodities vs months
+    // Summary view toggle functions
+    html += 'function setSummaryGroupBy(groupBy) { state.summaryGroupBy = groupBy; state.expandedRows = {}; renderData(); }';
+    html += 'function toggleRowExpand(key) { if (state.expandedRows[key]) delete state.expandedRows[key]; else state.expandedRows[key] = true; renderData(); }';
+
+    // Render summary view - matrix of commodities/customers vs months with toggle
     html += 'function renderSummaryView(container, items) {';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3><p>Try adjusting your filters or import some data</p></div>\'; return; }';
-    // Build data structure: commodities x months
-    html += 'var data = {}; var months = new Set(); var commodities = new Set();';
+    html += 'var groupBy = state.summaryGroupBy || "commodity";';
+    // Build data structures
+    html += 'var mainData = {}; var breakdownData = {}; var months = new Set(); var primaryKeys = new Set(); var secondaryKeys = new Set();';
     html += 'items.forEach(function(item) {';
     html += 'var comm = item.commodity || "Other";';
-    html += 'commodities.add(comm);';
     html += 'item.orders.forEach(function(o) {';
+    html += 'var cust = o.customer || "Unknown";';
     html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "TBD";';
     html += 'months.add(monthKey);';
-    html += 'var key = comm + "|" + monthKey;';
-    html += 'if (!data[key]) data[key] = { dollars: 0, units: 0 };';
-    html += 'data[key].dollars += o.total_amount || 0;';
-    html += 'data[key].units += o.quantity || 0;';
+    html += 'var primary = groupBy === "commodity" ? comm : cust;';
+    html += 'var secondary = groupBy === "commodity" ? cust : comm;';
+    html += 'primaryKeys.add(primary); secondaryKeys.add(secondary);';
+    // Main aggregation
+    html += 'var mainKey = primary + "|" + monthKey;';
+    html += 'if (!mainData[mainKey]) mainData[mainKey] = { dollars: 0, units: 0 };';
+    html += 'mainData[mainKey].dollars += o.total_amount || 0;';
+    html += 'mainData[mainKey].units += o.quantity || 0;';
+    // Breakdown aggregation
+    html += 'var bkKey = primary + "|" + secondary + "|" + monthKey;';
+    html += 'if (!breakdownData[bkKey]) breakdownData[bkKey] = { dollars: 0, units: 0 };';
+    html += 'breakdownData[bkKey].dollars += o.total_amount || 0;';
+    html += 'breakdownData[bkKey].units += o.quantity || 0;';
     html += '}); });';
-    // Sort months and commodities
+    // Sort and calculate totals
     html += 'var sortedMonths = Array.from(months).sort();';
-    html += 'var commTotals = {};';
-    html += 'Array.from(commodities).forEach(function(c) {';
-    html += 'commTotals[c] = { dollars: 0, units: 0 };';
-    html += 'sortedMonths.forEach(function(m) {';
-    html += 'var key = c + "|" + m;';
-    html += 'if (data[key]) { commTotals[c].dollars += data[key].dollars; commTotals[c].units += data[key].units; }';
-    html += '}); });';
-    html += 'var sortedComms = Array.from(commodities).sort(function(a,b) { return commTotals[b].dollars - commTotals[a].dollars; });';
-    // Calculate column totals
-    html += 'var colTotals = {};';
-    html += 'sortedMonths.forEach(function(m) {';
-    html += 'colTotals[m] = { dollars: 0, units: 0 };';
-    html += 'sortedComms.forEach(function(c) {';
-    html += 'var key = c + "|" + m;';
-    html += 'if (data[key]) { colTotals[m].dollars += data[key].dollars; colTotals[m].units += data[key].units; }';
-    html += '}); });';
-    html += 'var grandTotal = { dollars: 0, units: 0 };';
-    html += 'sortedComms.forEach(function(c) { grandTotal.dollars += commTotals[c].dollars; grandTotal.units += commTotals[c].units; });';
+    html += 'var primaryTotals = {};';
+    html += 'Array.from(primaryKeys).forEach(function(p) { primaryTotals[p] = { dollars: 0, units: 0 }; sortedMonths.forEach(function(m) { var k = p + "|" + m; if (mainData[k]) { primaryTotals[p].dollars += mainData[k].dollars; primaryTotals[p].units += mainData[k].units; } }); });';
+    html += 'var sortedPrimary = Array.from(primaryKeys).sort(function(a,b) { return primaryTotals[b].dollars - primaryTotals[a].dollars; });';
+    html += 'var colTotals = {}; sortedMonths.forEach(function(m) { colTotals[m] = { dollars: 0, units: 0 }; sortedPrimary.forEach(function(p) { var k = p + "|" + m; if (mainData[k]) { colTotals[m].dollars += mainData[k].dollars; colTotals[m].units += mainData[k].units; } }); });';
+    html += 'var grandTotal = { dollars: 0, units: 0 }; sortedPrimary.forEach(function(p) { grandTotal.dollars += primaryTotals[p].dollars; grandTotal.units += primaryTotals[p].units; });';
     // Build HTML
     html += 'var out = \'<div class="summary-container">\';';
-    html += 'out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\';';
-    html += 'out += \'<table class="summary-table"><thead><tr><th>Commodity</th>\';';
-    // Month headers
-    html += 'sortedMonths.forEach(function(m) {';
-    html += 'var label = m === "TBD" ? "TBD" : formatMonthShort(m);';
-    html += 'out += \'<th>\' + label + \'</th>\'; });';
+    // Toggle header
+    html += 'out += \'<div class="summary-header"><div class="summary-toggle"><span>Group by:</span><div class="summary-toggle-btns">\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" onclick="setSummaryGroupBy(\\\'commodity\\\')">Commodity</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" onclick="setSummaryGroupBy(\\\'customer\\\')">Customer</button>\';';
+    html += 'out += \'</div></div>\';';
+    html += 'if (groupBy === "commodity") { out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\'; }';
+    html += 'out += \'</div>\';';
+    // Table
+    html += 'out += \'<table class="summary-table"><thead><tr><th>\' + (groupBy === "commodity" ? "Commodity" : "Customer") + \'</th>\';';
+    html += 'sortedMonths.forEach(function(m) { out += \'<th>\' + (m === "TBD" ? "TBD" : formatMonthShort(m)) + \'</th>\'; });';
     html += 'out += \'<th class="row-total">Total</th></tr></thead><tbody>\';';
-    // Data rows
-    html += 'sortedComms.forEach(function(comm) {';
-    html += 'var rowClass = "comm-row-" + comm.toLowerCase().replace(/[^a-z]/g, "");';
-    html += 'if (["top","bottom","dress","sweater","jacket"].indexOf(comm.toLowerCase()) === -1) rowClass = "comm-row-other";';
-    html += 'out += \'<tr class="\' + rowClass + \'"><td>\' + escapeHtml(comm) + \'</td>\';';
-    html += 'sortedMonths.forEach(function(m) {';
-    html += 'var key = comm + "|" + m;';
-    html += 'var cell = data[key] || { dollars: 0, units: 0 };';
-    html += 'var hasValue = cell.dollars > 0;';
-    html += 'out += \'<td><div class="summary-cell\' + (hasValue ? " has-value" : "") + \'">\';';
-    html += 'out += \'<span class="dollars">$\' + formatNumber(Math.round(cell.dollars)) + \'</span>\';';
-    html += 'out += \'<span class="units">\' + formatNumber(cell.units) + \' units</span>\';';
-    html += 'out += \'</div></td>\'; });';
-    // Row total
-    html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">$\' + formatNumber(Math.round(commTotals[comm].dollars)) + \'</span><span class="units">\' + formatNumber(commTotals[comm].units) + \' units</span></div></td></tr>\'; });';
-    // Column totals row
-    html += 'out += \'<tr class="col-total"><td><strong>Monthly Total</strong></td>\';';
-    html += 'sortedMonths.forEach(function(m) {';
-    html += 'out += \'<td><div class="summary-cell has-value"><span class="dollars">$\' + formatNumber(Math.round(colTotals[m].dollars)) + \'</span><span class="units">\' + formatNumber(colTotals[m].units) + \' units</span></div></td>\'; });';
-    // Grand total
-    html += 'out += \'<td class="grand-total"><div class="summary-cell"><span class="dollars" style="color:white">$\' + formatNumber(Math.round(grandTotal.dollars)) + \'</span><span class="units" style="color:rgba(255,255,255,0.7)">\' + formatNumber(grandTotal.units) + \' units</span></div></td></tr>\';';
+    // Data rows with expand
+    html += 'sortedPrimary.forEach(function(primary) {';
+    html += 'var isExpanded = state.expandedRows[primary];';
+    html += 'var rowClass = groupBy === "commodity" ? "comm-row-" + primary.toLowerCase().replace(/[^a-z]/g, "") : "";';
+    html += 'if (groupBy === "commodity" && ["top","bottom","dress","sweater","jacket"].indexOf(primary.toLowerCase()) === -1) rowClass = "comm-row-other";';
+    html += 'out += \'<tr class="\' + rowClass + \'"><td><button class="expand-btn\' + (isExpanded ? " expanded" : "") + \'" onclick="toggleRowExpand(\\\'\' + primary.replace(/\'/g, "") + \'\\\')">▶</button>\' + escapeHtml(primary) + \'</td>\';';
+    html += 'sortedMonths.forEach(function(m) { var k = primary + "|" + m; var cell = mainData[k] || { dollars: 0, units: 0 }; out += \'<td><div class="summary-cell\' + (cell.dollars > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(cell.dollars) + \'</span><span class="units">\' + formatNumber(cell.units) + \' units</span></div></td>\'; });';
+    html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(primaryTotals[primary].dollars) + \'</span><span class="units">\' + formatNumber(primaryTotals[primary].units) + \' units</span></div></td></tr>\';';
+    // Expanded sub-rows
+    html += 'if (isExpanded) { var secondaryTotals = {}; Array.from(secondaryKeys).forEach(function(s) { secondaryTotals[s] = { dollars: 0, units: 0 }; sortedMonths.forEach(function(m) { var bk = primary + "|" + s + "|" + m; if (breakdownData[bk]) { secondaryTotals[s].dollars += breakdownData[bk].dollars; secondaryTotals[s].units += breakdownData[bk].units; } }); });';
+    html += 'var sortedSecondary = Array.from(secondaryKeys).filter(function(s) { return secondaryTotals[s].dollars > 0; }).sort(function(a,b) { return secondaryTotals[b].dollars - secondaryTotals[a].dollars; });';
+    html += 'sortedSecondary.forEach(function(sec) { out += \'<tr class="summary-subrow"><td>\' + escapeHtml(sec) + \'</td>\';';
+    html += 'sortedMonths.forEach(function(m) { var bk = primary + "|" + sec + "|" + m; var cell = breakdownData[bk] || { dollars: 0, units: 0 }; out += \'<td><div class="summary-cell\' + (cell.dollars > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(cell.dollars) + \'</span><span class="units">\' + formatNumber(cell.units) + \' units</span></div></td>\'; });';
+    html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(secondaryTotals[sec].dollars) + \'</span><span class="units">\' + formatNumber(secondaryTotals[sec].units) + \' units</span></div></td></tr>\'; }); }';
+    html += '});';
+    // Column totals
+    html += 'out += \'<tr class="col-total"><td><strong>Total</strong></td>\';';
+    html += 'sortedMonths.forEach(function(m) { out += \'<td><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(colTotals[m].dollars) + \'</span><span class="units">\' + formatNumber(colTotals[m].units) + \' units</span></div></td>\'; });';
+    html += 'out += \'<td class="grand-total"><div class="summary-cell"><span class="dollars" style="color:white">\' + formatMoney(grandTotal.dollars) + \'</span><span class="units" style="color:rgba(255,255,255,0.7)">\' + formatNumber(grandTotal.units) + \' units</span></div></td></tr>\';';
     html += 'out += \'</tbody></table></div>\';';
     html += 'container.innerHTML = out; }';
 
