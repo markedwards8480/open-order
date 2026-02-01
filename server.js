@@ -2344,7 +2344,7 @@ function getHTML() {
     html += 'var isActive = state.filters.month === monthKey;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
     html += 'out += \'<div class="timeline-bar" style="height:\' + Math.max(pct, 15) + \'%"><span class="bar-month">\' + monthName + \'</span><span class="bar-year">\' + yearShort + \'</span></div>\';';
-    html += 'out += \'<div class="timeline-stats"><div class="timeline-dollars">$\' + (data.dollars/1000).toFixed(0) + \'K</div><div class="timeline-units">\' + (data.units/1000).toFixed(0) + \'K units</div></div></div>\';';
+    html += 'out += \'<div class="timeline-stats"><div class="timeline-dollars">$\' + Math.round(data.dollars/1000).toLocaleString() + \'K</div><div class="timeline-units">\' + Math.round(data.units/1000).toLocaleString() + \'K units</div></div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕ Clear month filter</button>\'; }';
@@ -2361,7 +2361,7 @@ function getHTML() {
     html += 'var size = Math.max(Math.sqrt(pct) * 20, 8);';
     html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 15) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
-    html += 'out += \'<div class="treemap-value">$\' + (value/1000).toFixed(0) + \'K</div>\';';
+    html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
@@ -2377,7 +2377,7 @@ function getHTML() {
     html += 'out += \'<div class="customer-bar" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="customer-name">\' + cust + \'</div>\';';
     html += 'out += \'<div class="customer-bar-fill" style="width:\' + pct + \'%;background:\' + colors[idx % colors.length] + \'"></div>\';';
-    html += 'out += \'<div class="customer-value">$\' + (value/1000).toFixed(0) + \'K</div></div>\';';
+    html += 'out += \'<div class="customer-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     html += 'if (state.filters.customers.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCustomerFilter()">✕ Clear: \' + state.filters.customers[0] + \'</button>\'; }';
