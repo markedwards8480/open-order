@@ -1714,22 +1714,20 @@ function getHTML() {
     html += '.dashboard-style-comm{font-size:0.625rem;color:#0088c2;margin-top:2px}';
     html += '.dashboard-style-stats{display:flex;justify-content:space-between;margin-top:4px;font-size:0.6875rem;color:#666}';
     html += '.dashboard-style-stats .money{color:#34c759;font-weight:600}';
-    // Dashboard timeline
-    html += '.dashboard-timeline{background:white;border-radius:16px;padding:1rem 1.5rem;margin-bottom:1rem;border:1px solid rgba(0,0,0,0.04)}';
-    html += '.timeline-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}';
-    html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.9375rem}';
-    html += '.timeline-hint{font-size:0.75rem;color:#86868b}';
-    html += '.timeline-bars{display:flex;gap:6px;align-items:flex-end;height:100px}';
-    html += '.timeline-month{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;border-radius:6px;transition:transform 0.15s}';
-    html += '.timeline-month:hover{transform:scale(1.02)}';
-    html += '.timeline-month.active .timeline-bar{background:linear-gradient(to top,#1e3a5f,#0066aa)}';
-    html += '.timeline-bar{width:100%;background:linear-gradient(to top,#0088c2,#4da6d9);border-radius:6px;min-height:20px;transition:height 0.3s;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px}';
-    html += '.bar-month{color:white;font-weight:700;font-size:0.8125rem;text-shadow:0 1px 2px rgba(0,0,0,0.3)}';
-    html += '.bar-year{color:rgba(255,255,255,0.85);font-size:0.6875rem;font-weight:500}';
-    html += '.timeline-stats{text-align:center;padding:4px 0}';
-    html += '.timeline-dollars{font-size:0.6875rem;color:#1e3a5f;font-weight:600}';
-    html += '.timeline-units{font-size:0.5625rem;color:#86868b}';
-    html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:0.375rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.75rem}';
+    // Dashboard timeline - compact single row
+    html += '.dashboard-timeline{background:white;border-radius:12px;padding:0.5rem 1rem;margin-bottom:0.75rem;border:1px solid rgba(0,0,0,0.04);display:flex;align-items:center;gap:0.75rem}';
+    html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.8rem;white-space:nowrap}';
+    html += '.timeline-bars{display:flex;gap:4px;flex:1}';
+    html += '.timeline-month{flex:1;cursor:pointer;transition:transform 0.15s}';
+    html += '.timeline-month:hover{transform:scale(1.03)}';
+    html += '.timeline-month.active .timeline-bar{background:#1e3a5f}';
+    html += '.timeline-bar{background:#0088c2;border-radius:4px;padding:6px 4px;text-align:center}';
+    html += '.bar-month{color:white;font-weight:600;font-size:0.7rem}';
+    html += '.bar-year{color:rgba(255,255,255,0.8);font-size:0.6rem}';
+    html += '.timeline-stats{font-size:0.6rem;color:#666;text-align:center;margin-top:2px}';
+    html += '.timeline-dollars{color:#1e3a5f;font-weight:600}';
+    html += '.timeline-units{color:#86868b;font-size:0.55rem}';
+    html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:4px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer;margin-left:8px}';
     html += '.timeline-clear:hover{background:#d63030}';
     html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
     html += '.filter-clear-btn:hover{background:#d63030}';
@@ -2455,22 +2453,21 @@ function getHTML() {
     html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
     // Build HTML
     html += 'var out = \'\';';
-    // Month timeline at top
-    html += 'out += \'<div class="dashboard-timeline"><div class="timeline-header"><span class="timeline-title">📅 Delivery Timeline</span><span class="timeline-hint">(click month to filter)</span></div><div class="timeline-bars">\';';
+    // Month timeline - compact single row
+    html += 'out += \'<div class="dashboard-timeline"><span class="timeline-title">📅 Months:</span><div class="timeline-bars">\';';
     html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'sortedMonths.forEach(function(monthKey) {';
     html += 'var data = monthlyData[monthKey];';
-    html += 'var pct = (data.dollars / maxMonthValue * 100).toFixed(0);';
     html += 'var parts = monthKey.split("-");';
     html += 'var monthName = months[parseInt(parts[1])-1];';
     html += 'var yearShort = parts[0].slice(2);';
     html += 'var isActive = state.filters.month === monthKey;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
-    html += 'out += \'<div class="timeline-bar" style="height:\' + Math.max(pct, 15) + \'%"><span class="bar-month">\' + monthName + \'</span><span class="bar-year">\' + yearShort + \'</span></div>\';';
-    html += 'out += \'<div class="timeline-stats"><div class="timeline-dollars">$\' + Math.round(data.dollars/1000).toLocaleString() + \'K</div><div class="timeline-units">\' + Math.round(data.units/1000).toLocaleString() + \'K units</div></div></div>\';';
+    html += 'out += \'<div class="timeline-bar"><span class="bar-month">\' + monthName + \' \\x27\' + yearShort + \'</span></div>\';';
+    html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(data.dollars/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
-    html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕ Clear month filter</button>\'; }';
+    html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕</button>\'; }';
     html += 'out += \'</div>\';';
     // Main layout with collapsible sidebar
     html += 'var sidebarCollapsed = state.sidebarCollapsed || false;';
