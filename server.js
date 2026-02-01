@@ -377,6 +377,18 @@ app.get('/api/orders/by-so', async function(req, res) {
         var params = [];
         var paramIndex = 1;
 
+        // Check for includeFiscalYears setting to exclude old data
+        var settingsResult = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'includeFiscalYears'");
+        if (settingsResult.rows.length > 0 && settingsResult.rows[0].setting_value) {
+            var includedFYs = settingsResult.rows[0].setting_value.split(',').map(fy => parseInt(fy.trim())).filter(fy => !isNaN(fy));
+            if (includedFYs.length > 0) {
+                var fyConditions = includedFYs.map(function(fy) {
+                    return "(delivery_date::date >= '" + (fy - 1) + "-06-01'::date AND delivery_date::date <= '" + fy + "-05-31'::date)";
+                });
+                conditions.push('(' + fyConditions.join(' OR ') + ')');
+            }
+        }
+
         if (status && status !== 'All') {
             if (status === 'Open') {
                 conditions.push("status IN ('Open', 'Partial')");
@@ -443,6 +455,7 @@ app.get('/api/orders/by-so', async function(req, res) {
             ${whereClause}
             GROUP BY so_number, customer
             ORDER BY MIN(delivery_date), so_number
+            LIMIT 500
         `;
 
         var result = await pool.query(query, params);
@@ -1790,7 +1803,7 @@ function getHTML() {
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
     html += 'var url = state.view === "orders" ? "/api/orders/by-so?" : "/api/orders?";';
     html += 'var controller = new AbortController();';
-    html += 'var timeoutId = setTimeout(function() { controller.abort(); }, 30000);'; // 30 second timeout
+    html += 'var timeoutId = setTimeout(function() { controller.abort(); }, 60000);'; // 60 second timeout
     html += 'var res = await fetch(url + params.toString(), { signal: controller.signal });';
     html += 'clearTimeout(timeoutId);';
     html += 'var data = await res.json();';
