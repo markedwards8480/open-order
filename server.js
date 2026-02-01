@@ -317,7 +317,8 @@ app.get('/api/orders', async function(req, res) {
             FROM order_items
             ${whereClause}
             GROUP BY style_number, style_name, commodity, image_url
-            ORDER BY style_number
+            ORDER BY SUM(total_amount) DESC
+            LIMIT 500
         `;
 
         var result = await pool.query(query, params);
@@ -1756,7 +1757,10 @@ function getHTML() {
     html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
     html += 'var url = state.view === "orders" ? "/api/orders/by-so?" : "/api/orders?";';
-    html += 'var res = await fetch(url + params.toString());';
+    html += 'var controller = new AbortController();';
+    html += 'var timeoutId = setTimeout(function() { controller.abort(); }, 30000);'; // 30 second timeout
+    html += 'var res = await fetch(url + params.toString(), { signal: controller.signal });';
+    html += 'clearTimeout(timeoutId);';
     html += 'var data = await res.json();';
     html += 'state.data = data;';
     html += 'updateStats(data.stats || {});';
