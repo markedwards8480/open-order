@@ -2544,6 +2544,18 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
     html += 'out += \'</div>\';';
+    // Treemap (compact version)
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity</h3><div class="dashboard-treemap">\';';
+    html += 'commSorted.slice(0,12).forEach(function(entry, idx) {';
+    html += 'var comm = entry[0], value = entry[1];';
+    html += 'var pct = (value / total * 100);';
+    html += 'var size = Math.max(Math.sqrt(pct) * 18, 8);';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 12) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
+    html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
+    html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
     // Top customers (using full data from API)
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
     html += 'var topCust = custSorted.slice(0, 8);';
