@@ -1596,7 +1596,8 @@ function getHTML() {
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
+    html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
     html += '</div>';
 
     // Main content
@@ -1645,7 +1646,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "monthly", data: null };';
+    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "monthly", sortBy: "value", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -1766,6 +1767,8 @@ function getHTML() {
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
     html += 'else if (state.view === "summary") { renderSummaryView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
+    html += 'else if (state.view === "topmovers") { renderTopMoversView(container, data.items || []); }';
+    html += 'else if (state.view === "opportunities") { renderOpportunitiesView(container, data.items || []); }';
     html += 'else if (state.view === "charts") { renderChartsView(container, data); }';
     html += 'else { renderOrdersView(container, data.orders || []); }';
     html += '} catch(e) { console.error("Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
@@ -1937,6 +1940,87 @@ function getHTML() {
     // Grand total
     html += 'out += \'<td class="grand-total"><div class="summary-cell"><span class="dollars" style="color:white">$\' + formatNumber(Math.round(grandTotal.dollars)) + \'</span><span class="units" style="color:rgba(255,255,255,0.7)">\' + formatNumber(grandTotal.units) + \' units</span></div></td></tr>\';';
     html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
+
+    // Render Top Movers view - compact ranked table
+    html += 'function renderTopMoversView(container, items) {';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3></div>\'; return; }';
+    // Aggregate by style
+    html += 'var styleData = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'if (!styleData[item.style_number]) styleData[item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0, order_count: 0, customers: new Set() };';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'styleData[item.style_number].total_qty += o.quantity || 0;';
+    html += 'styleData[item.style_number].total_dollars += o.total_amount || 0;';
+    html += 'styleData[item.style_number].order_count++;';
+    html += 'styleData[item.style_number].customers.add(o.customer);';
+    html += '}); });';
+    // Sort
+    html += 'var sorted = Object.values(styleData);';
+    html += 'if (state.sortBy === "units") sorted.sort(function(a,b) { return b.total_qty - a.total_qty; });';
+    html += 'else if (state.sortBy === "orders") sorted.sort(function(a,b) { return b.order_count - a.order_count; });';
+    html += 'else if (state.sortBy === "commodity") sorted.sort(function(a,b) { return (a.commodity || "ZZZ").localeCompare(b.commodity || "ZZZ"); });';
+    html += 'else sorted.sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    // Render table
+    html += 'var out = \'<div style="padding:1rem"><table class="topmovers-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">\';';
+    html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left"><th style="padding:0.75rem;width:50px">#</th><th style="padding:0.75rem">Style</th><th style="padding:0.75rem">Name</th><th style="padding:0.75rem">Commodity</th><th style="padding:0.75rem;text-align:right">Units</th><th style="padding:0.75rem;text-align:right">Value</th><th style="padding:0.75rem;text-align:center">Orders</th><th style="padding:0.75rem;text-align:center">Customers</th></tr></thead><tbody>\';';
+    html += 'sorted.slice(0, 50).forEach(function(item, idx) {';
+    html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#f9fafb";';
+    html += 'out += \'<tr style="background:\' + bgColor + \';border-bottom:1px solid #eee">\';';
+    html += 'out += \'<td style="padding:0.75rem;font-weight:600;color:#86868b">\' + (idx + 1) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem;font-weight:600;color:#1e3a5f">\' + item.style_number + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem">\' + (item.style_name || "-") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem"><span class="commodity-tag">\' + (item.commodity || "-") + \'</span></td>\';';
+    html += 'out += \'<td style="padding:0.75rem;text-align:right;font-weight:500">\' + formatNumber(item.total_qty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem;text-align:right;font-weight:600;color:#0088c2">$\' + formatNumber(Math.round(item.total_dollars)) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem;text-align:center">\' + item.order_count + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem;text-align:center;font-weight:500;color:\' + (item.customers.size > 2 ? "#34c759" : "#86868b") + \'">\' + item.customers.size + \'</td>\';';
+    html += 'out += \'</tr>\'; });';
+    html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
+
+    // Render Opportunities view - multi-customer winners + who's missing
+    html += 'function renderOpportunitiesView(container, items) {';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3></div>\'; return; }';
+    // Get all customers and aggregate by commodity
+    html += 'var allCustomers = new Set();';
+    html += 'var commodityData = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'if (!commodityData[comm]) commodityData[comm] = { commodity: comm, total_dollars: 0, total_qty: 0, customers: new Set(), styles: [] };';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'allCustomers.add(o.customer);';
+    html += 'commodityData[comm].customers.add(o.customer);';
+    html += 'commodityData[comm].total_dollars += o.total_amount || 0;';
+    html += 'commodityData[comm].total_qty += o.quantity || 0;';
+    html += '});';
+    html += 'commodityData[comm].styles.push(item.style_number);';
+    html += '});';
+    // Sort commodities by value
+    html += 'var sortedComms = Object.values(commodityData).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    html += 'var customerList = Array.from(allCustomers).sort();';
+    // Render
+    html += 'var out = \'<div style="padding:1rem"><h2 style="color:#1e3a5f;margin-bottom:1rem">🎯 Opportunity Finder</h2>\';';
+    html += 'out += \'<p style="color:#86868b;margin-bottom:1.5rem">Commodities with multiple customers = proven winners. Customers missing = opportunity to sell!</p>\';';
+    html += 'sortedComms.forEach(function(comm) {';
+    html += 'var missingCustomers = customerList.filter(function(c) { return !comm.customers.has(c); });';
+    html += 'var hasOpportunity = missingCustomers.length > 0 && comm.customers.size >= 2;';
+    html += 'out += \'<div style="background:white;border-radius:12px;padding:1.5rem;margin-bottom:1rem;border:1px solid \' + (hasOpportunity ? "#34c759" : "#e5e5e5") + \'">\';';
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">\';';
+    html += 'out += \'<div><h3 style="color:#1e3a5f;margin:0">\' + comm.commodity + \'</h3>\';';
+    html += 'out += \'<span style="color:#86868b;font-size:0.875rem">\' + comm.styles.length + \' styles · $\' + formatNumber(Math.round(comm.total_dollars)) + \' · \' + formatNumber(comm.total_qty) + \' units</span></div>\';';
+    html += 'out += \'<div style="font-size:1.5rem;font-weight:600;color:\' + (comm.customers.size >= 3 ? "#34c759" : comm.customers.size >= 2 ? "#ff9500" : "#86868b") + \'">\' + comm.customers.size + \' customers</div></div>\';';
+    // Who's buying
+    html += 'out += \'<div style="margin-bottom:0.75rem"><span style="font-weight:600;color:#1e3a5f;font-size:0.8125rem">✅ BUYING: </span>\';';
+    html += 'out += Array.from(comm.customers).map(function(c) { return \'<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;padding:0.25rem 0.5rem;border-radius:4px;margin:0.125rem;font-size:0.75rem">\' + c + \'</span>\'; }).join("");';
+    html += 'out += \'</div>\';';
+    // Who's NOT buying (opportunity)
+    html += 'if (missingCustomers.length > 0 && comm.customers.size >= 2) {';
+    html += 'out += \'<div><span style="font-weight:600;color:#ff3b30;font-size:0.8125rem">🎯 NOT BUYING (OPPORTUNITY): </span>\';';
+    html += 'out += missingCustomers.map(function(c) { return \'<span style="display:inline-block;background:#ffebee;color:#c62828;padding:0.25rem 0.5rem;border-radius:4px;margin:0.125rem;font-size:0.75rem">\' + c + \'</span>\'; }).join("");';
+    html += 'out += \'</div>\'; }';
+    html += 'out += \'</div>\'; });';
+    html += 'out += \'</div>\';';
     html += 'container.innerHTML = out; }';
 
     // Render orders view
@@ -2247,6 +2331,7 @@ function getHTML() {
     html += 'document.getElementById("fiscalYearFilter").addEventListener("change", function(e) { state.filters.fiscalYear = e.target.value; state.filters.year = ""; document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
     html += 'document.getElementById("monthFilter").addEventListener("change", function(e) { state.filters.month = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
     html += 'document.getElementById("commodityFilter").addEventListener("change", function(e) { state.filters.commodity = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    html += 'document.getElementById("sortByFilter").addEventListener("change", function(e) { state.sortBy = e.target.value; if (state.data) renderContent(state.data); });';
 
     // Status toggle
     html += 'document.querySelectorAll(".status-btn").forEach(function(btn) { btn.addEventListener("click", function() {';
