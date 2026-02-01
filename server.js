@@ -1682,9 +1682,11 @@ function getHTML() {
     html += '.dashboard-layout.sidebar-collapsed{grid-template-columns:0 1fr}';
     html += '.dashboard-layout.sidebar-collapsed .dashboard-charts{opacity:0;pointer-events:none;overflow:hidden;width:0;padding:0;margin:0}';
     html += '@media(max-width:1200px){.dashboard-layout{grid-template-columns:1fr}}';
-    html += '.sidebar-toggle{position:absolute;left:0;top:0;background:#1e3a5f;color:white;border:none;padding:6px 10px;border-radius:0 0 6px 0;font-size:0.7rem;cursor:pointer;z-index:20}';
+    html += '.sidebar-toggle{position:fixed;left:8px;top:50%;transform:translateY(-50%);background:#1e3a5f;color:white;border:none;padding:10px 8px;border-radius:6px;font-size:0.75rem;cursor:pointer;z-index:100;display:none;box-shadow:0 2px 8px rgba(0,0,0,0.15)}';
     html += '.sidebar-toggle:hover{background:#0088c2}';
-    html += '.dashboard-layout.sidebar-collapsed .sidebar-toggle{border-radius:0 0 6px 0}';
+    html += '.dashboard-layout.sidebar-collapsed .sidebar-toggle{display:block}';
+    html += '.sidebar-hide-link{float:right;font-size:0.7rem;color:#86868b;cursor:pointer;font-weight:normal}';
+    html += '.sidebar-hide-link:hover{color:#0088c2}';
     html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem;transition:opacity 0.3s,width 0.3s;position:relative}';
     html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
     html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
@@ -2473,12 +2475,12 @@ function getHTML() {
     // Main layout with collapsible sidebar
     html += 'var sidebarCollapsed = state.sidebarCollapsed || false;';
     html += 'out += \'<div class="dashboard-layout\' + (sidebarCollapsed ? " sidebar-collapsed" : "") + \'" id="dashboardLayout">\';';
-    // Toggle button (outside sidebar so it stays visible when collapsed)
-    html += 'out += \'<button class="sidebar-toggle" onclick="toggleDashboardSidebar()" title="\' + (sidebarCollapsed ? "Show filters" : "Hide filters") + \'">\' + (sidebarCollapsed ? "☰ Filters" : "« Hide") + \'</button>\';';
+    // Toggle button (only visible when collapsed - fixed position on left edge)
+    html += 'out += \'<button class="sidebar-toggle" onclick="toggleDashboardSidebar()" title="Show filters">☰ Filters</button>\';';
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
-    // Treemap
-    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3><div class="dashboard-treemap">\';';
+    // Treemap with hide link in header
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3><div class="dashboard-treemap">\';';
     html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
@@ -2563,8 +2565,6 @@ function getHTML() {
     html += 'state.sidebarCollapsed = !state.sidebarCollapsed;';
     html += 'var layout = document.getElementById("dashboardLayout");';
     html += 'if (layout) layout.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);';
-    html += 'var btn = layout.querySelector(".sidebar-toggle");';
-    html += 'if (btn) { btn.textContent = state.sidebarCollapsed ? "☰ Filters" : "« Hide"; btn.title = state.sidebarCollapsed ? "Show filters" : "Hide filters"; }';
     html += '}';
 
     // Filter by month from dashboard timeline
