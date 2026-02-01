@@ -2423,7 +2423,7 @@ function getHTML() {
     html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
-    html += 'out += \'<div class="dashboard-style-card" onclick="openStyleModal(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
     html += 'out += \'<div class="dashboard-style-img"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\x27none\\x27"></div>\';';
     html += 'out += \'<div class="dashboard-style-info">\';';
     html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
