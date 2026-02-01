@@ -1615,14 +1615,16 @@ function getHTML() {
     html += '.timeline-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}';
     html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.9375rem}';
     html += '.timeline-hint{font-size:0.75rem;color:#86868b}';
-    html += '.timeline-bars{display:flex;gap:4px;align-items:flex-end;height:80px}';
-    html += '.timeline-month{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:4px;border-radius:6px;transition:background 0.15s}';
-    html += '.timeline-month:hover{background:#f0f4f8}';
-    html += '.timeline-month.active{background:#e3f2fd}';
-    html += '.timeline-bar{width:100%;background:linear-gradient(to top,#0088c2,#4da6d9);border-radius:4px 4px 0 0;min-height:4px;transition:height 0.3s}';
-    html += '.timeline-month.active .timeline-bar{background:linear-gradient(to top,#1e3a5f,#0088c2)}';
-    html += '.timeline-value{font-size:0.625rem;color:#666;margin-top:4px;font-weight:500}';
-    html += '.timeline-label{font-size:0.6875rem;color:#1e3a5f;font-weight:500}';
+    html += '.timeline-bars{display:flex;gap:6px;align-items:flex-end;height:100px}';
+    html += '.timeline-month{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;border-radius:6px;transition:transform 0.15s}';
+    html += '.timeline-month:hover{transform:scale(1.02)}';
+    html += '.timeline-month.active .timeline-bar{background:linear-gradient(to top,#1e3a5f,#0066aa)}';
+    html += '.timeline-bar{width:100%;background:linear-gradient(to top,#0088c2,#4da6d9);border-radius:6px;min-height:20px;transition:height 0.3s;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px}';
+    html += '.bar-month{color:white;font-weight:700;font-size:0.8125rem;text-shadow:0 1px 2px rgba(0,0,0,0.3)}';
+    html += '.bar-year{color:rgba(255,255,255,0.85);font-size:0.6875rem;font-weight:500}';
+    html += '.timeline-stats{text-align:center;padding:4px 0}';
+    html += '.timeline-dollars{font-size:0.6875rem;color:#1e3a5f;font-weight:600}';
+    html += '.timeline-units{font-size:0.5625rem;color:#86868b}';
     html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:0.375rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.75rem}';
     html += '.timeline-clear:hover{background:#d63030}';
 
@@ -2313,8 +2315,9 @@ function getHTML() {
     html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
     html += 'commodityData[comm] += o.total_amount || 0;';
     html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "9999-99";';
-    html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = 0;';
-    html += 'monthlyData[monthKey] += o.total_amount || 0;';
+    html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = { dollars: 0, units: 0 };';
+    html += 'monthlyData[monthKey].dollars += o.total_amount || 0;';
+    html += 'monthlyData[monthKey].units += o.quantity || 0;';
     html += '}); });';
     // Sort data
     html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
@@ -2322,7 +2325,7 @@ function getHTML() {
     html += 'var total = commSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
     // Sort months
     html += 'var sortedMonths = Object.keys(monthlyData).sort().filter(function(m) { return m !== "9999-99"; });';
-    html += 'var maxMonthValue = Math.max.apply(null, Object.values(monthlyData));';
+    html += 'var maxMonthValue = Math.max.apply(null, Object.values(monthlyData).map(function(d) { return d.dollars; }));';
     // Sort items by value
     html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
     // Build HTML
@@ -2331,15 +2334,15 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-timeline"><div class="timeline-header"><span class="timeline-title">📅 Delivery Timeline</span><span class="timeline-hint">(click month to filter)</span></div><div class="timeline-bars">\';';
     html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'sortedMonths.forEach(function(monthKey) {';
-    html += 'var value = monthlyData[monthKey];';
-    html += 'var pct = (value / maxMonthValue * 100).toFixed(0);';
+    html += 'var data = monthlyData[monthKey];';
+    html += 'var pct = (data.dollars / maxMonthValue * 100).toFixed(0);';
     html += 'var parts = monthKey.split("-");';
-    html += 'var label = months[parseInt(parts[1])-1] + " " + parts[0].slice(2);';
+    html += 'var monthName = months[parseInt(parts[1])-1];';
+    html += 'var yearShort = parts[0].slice(2);';
     html += 'var isActive = state.filters.month === monthKey;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
-    html += 'out += \'<div class="timeline-bar" style="height:\' + Math.max(pct, 5) + \'%"></div>\';';
-    html += 'out += \'<div class="timeline-value">$\' + (value/1000).toFixed(0) + \'K</div>\';';
-    html += 'out += \'<div class="timeline-label">\' + label + \'</div></div>\';';
+    html += 'out += \'<div class="timeline-bar" style="height:\' + Math.max(pct, 15) + \'%"><span class="bar-month">\' + monthName + \'</span><span class="bar-year">\' + yearShort + \'</span></div>\';';
+    html += 'out += \'<div class="timeline-stats"><div class="timeline-dollars">$\' + (data.dollars/1000).toFixed(0) + \'K</div><div class="timeline-units">\' + (data.units/1000).toFixed(0) + \'K units</div></div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕ Clear month filter</button>\'; }';
@@ -2349,7 +2352,7 @@ function getHTML() {
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts">\';';
     // Treemap
-    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-treemap">\';';
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3><div class="dashboard-treemap">\';';
     html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
