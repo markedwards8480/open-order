@@ -2187,8 +2187,11 @@ function getHTML() {
     html += 'window.toggleRowExpand = function(key) { if (state.expandedRows[key]) delete state.expandedRows[key]; else state.expandedRows[key] = true; renderData(); };';
     // Event delegation for summary view clicks
     html += 'document.addEventListener("click", function(e) {';
-    html += 'var btn = e.target.closest("[data-groupby]"); if (btn) { window.setSummaryGroupBy(btn.dataset.groupby); return; }';
-    html += 'var exp = e.target.closest("[data-expand]"); if (exp) { window.toggleRowExpand(exp.dataset.expand); return; }';
+    html += 'var t = e.target;';
+    html += 'if (t.dataset && t.dataset.groupby) { window.setSummaryGroupBy(t.dataset.groupby); return; }';
+    html += 'if (t.dataset && t.dataset.expand) { window.toggleRowExpand(t.dataset.expand); return; }';
+    html += 'if (t.parentElement && t.parentElement.dataset && t.parentElement.dataset.groupby) { window.setSummaryGroupBy(t.parentElement.dataset.groupby); return; }';
+    html += 'if (t.parentElement && t.parentElement.dataset && t.parentElement.dataset.expand) { window.toggleRowExpand(t.parentElement.dataset.expand); return; }';
     html += '});';
 
     // Render summary view - matrix of commodities/customers vs months with toggle
