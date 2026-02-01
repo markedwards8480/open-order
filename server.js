@@ -350,12 +350,45 @@ app.get('/api/orders', async function(req, res) {
         `;
         var statsResult = await pool.query(statsQuery, params);
 
+        // Get full commodity breakdown (no limit)
+        var commodityQuery = `
+            SELECT commodity, SUM(total_amount) as total_dollars, SUM(quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            GROUP BY commodity
+            ORDER BY SUM(total_amount) DESC
+        `;
+        var commodityResult = await pool.query(commodityQuery, params);
+
+        // Get full customer breakdown (no limit)
+        var customerQuery = `
+            SELECT customer, SUM(total_amount) as total_dollars, SUM(quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            GROUP BY customer
+            ORDER BY SUM(total_amount) DESC
+        `;
+        var customerResult = await pool.query(customerQuery, params);
+
+        // Get full monthly breakdown (no limit)
+        var monthlyQuery = `
+            SELECT TO_CHAR(delivery_date, 'YYYY-MM') as month, SUM(total_amount) as total_dollars, SUM(quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            GROUP BY TO_CHAR(delivery_date, 'YYYY-MM')
+            ORDER BY TO_CHAR(delivery_date, 'YYYY-MM')
+        `;
+        var monthlyResult = await pool.query(monthlyQuery, params);
+
         // Prevent browser caching of filtered results
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.set('Pragma', 'no-cache');
         res.json({
             items: result.rows,
-            stats: statsResult.rows[0]
+            stats: statsResult.rows[0],
+            commodityBreakdown: commodityResult.rows,
+            customerBreakdown: customerResult.rows,
+            monthlyBreakdown: monthlyResult.rows
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1920,7 +1953,7 @@ function getHTML() {
     html += 'var container = document.getElementById("content");';
     html += 'try {';
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
-    html += 'else if (state.view === "dashboard") { renderDashboardView(container, data.items || []); }';
+    html += 'else if (state.view === "dashboard") { renderDashboardView(container, data); }';
     html += 'else if (state.view === "summary") { renderSummaryView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
     html += 'else if (state.view === "topmovers") { renderTopMoversView(container, data.items || []); }';
@@ -2304,31 +2337,24 @@ function getHTML() {
     html += '}';
 
     // Dashboard view - hybrid charts + products
-    html += 'function renderDashboardView(container, items) {';
+    html += 'function renderDashboardView(container, data) {';
+    html += 'var items = data.items || [];';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for dashboard</h3><p>Import data to see the dashboard</p></div>\'; return; }';
-    // Build data for charts
-    html += 'var customerData = {}; var commodityData = {}; var monthlyData = {};';
-    html += 'items.forEach(function(item) {';
-    html += 'var comm = item.commodity || "Other";';
-    html += 'item.orders.forEach(function(o) {';
-    html += 'var cust = o.customer || "Unknown";';
-    html += 'if (!customerData[cust]) customerData[cust] = 0;';
-    html += 'customerData[cust] += o.total_amount || 0;';
-    html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
-    html += 'commodityData[comm] += o.total_amount || 0;';
-    html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "9999-99";';
-    html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = { dollars: 0, units: 0 };';
-    html += 'monthlyData[monthKey].dollars += o.total_amount || 0;';
-    html += 'monthlyData[monthKey].units += o.quantity || 0;';
-    html += '}); });';
-    // Sort data
+    // Use full breakdown data from API (not limited to 500 styles)
     html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
-    html += 'var commSorted = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
+    // Commodity data from full breakdown
+    html += 'var commSorted = (data.commodityBreakdown || []).map(function(r) { return [r.commodity || "Other", parseFloat(r.total_dollars) || 0]; });';
     html += 'var total = commSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
-    // Sort months
-    html += 'var sortedMonths = Object.keys(monthlyData).sort().filter(function(m) { return m !== "9999-99"; });';
-    html += 'var maxMonthValue = Math.max.apply(null, Object.values(monthlyData).map(function(d) { return d.dollars; }));';
-    // Sort items by value
+    // Customer data from full breakdown
+    html += 'var custSorted = (data.customerBreakdown || []).map(function(r) { return [r.customer || "Unknown", parseFloat(r.total_dollars) || 0]; });';
+    // Monthly data from full breakdown
+    html += 'var monthlyData = {};';
+    html += '(data.monthlyBreakdown || []).forEach(function(r) {';
+    html += 'if (r.month) monthlyData[r.month] = { dollars: parseFloat(r.total_dollars) || 0, units: parseFloat(r.total_qty) || 0 };';
+    html += '});';
+    html += 'var sortedMonths = Object.keys(monthlyData).sort().filter(function(m) { return m && m !== "9999-99"; });';
+    html += 'var maxMonthValue = sortedMonths.length > 0 ? Math.max.apply(null, sortedMonths.map(function(m) { return monthlyData[m].dollars; })) : 1;';
+    // Sort items by value (these are still top 500 for display)
     html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
     // Build HTML
     html += 'var out = \'\';';
@@ -2367,13 +2393,13 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
     html += 'out += \'</div>\';';
-    // Top customers
+    // Top customers (using full data from API)
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
-    html += 'var custSorted = Object.entries(customerData).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 8);';
-    html += 'var custTotal = custSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
-    html += 'custSorted.forEach(function(entry, idx) {';
+    html += 'var topCust = custSorted.slice(0, 8);';
+    html += 'var custTotal = topCust.reduce(function(a, e) { return a + e[1]; }, 0);';
+    html += 'topCust.forEach(function(entry, idx) {';
     html += 'var cust = entry[0], value = entry[1];';
-    html += 'var pct = (value / custTotal * 100).toFixed(1);';
+    html += 'var pct = custTotal > 0 ? (value / custTotal * 100).toFixed(1) : 0;';
     html += 'out += \'<div class="customer-bar" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="customer-name">\' + cust + \'</div>\';';
     html += 'out += \'<div class="customer-bar-fill" style="width:\' + pct + \'%;background:\' + colors[idx % colors.length] + \'"></div>\';';
@@ -2385,7 +2411,7 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + sortedItems.length + \' styles)</span></h3>\';';
+    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Top Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + sortedItems.length + \' of \' + (data.stats ? data.stats.style_count : sortedItems.length) + \')</span></h3>\';';
     html += 'out += \'<div class="dashboard-grid">\';';
     html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
