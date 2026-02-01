@@ -915,6 +915,100 @@ app.get('/api/image/:fileId', async function(req, res) {
     }
 });
 
+// Background image pre-caching (runs in background, doesn't block)
+var preCacheRunning = false;
+var preCacheProgress = { total: 0, done: 0, errors: 0 };
+
+async function preCacheImages() {
+    if (preCacheRunning) {
+        console.log('Pre-cache already running, skipping...');
+        return;
+    }
+
+    preCacheRunning = true;
+    console.log('Starting background image pre-cache...');
+
+    try {
+        // Get all unique image URLs that aren't cached yet
+        var result = await pool.query(`
+            SELECT DISTINCT image_url
+            FROM order_items
+            WHERE image_url IS NOT NULL
+            AND image_url != ''
+            AND image_url LIKE '%/download/%'
+        `);
+
+        var imageUrls = result.rows.map(r => r.image_url);
+        var uncached = [];
+
+        // Check which aren't cached
+        for (var url of imageUrls) {
+            var match = url.match(/\/download\/([a-zA-Z0-9]+)/);
+            if (match) {
+                var fileId = match[1];
+                var cached = await pool.query('SELECT 1 FROM image_cache WHERE file_id = $1', [fileId]);
+                if (cached.rows.length === 0) {
+                    uncached.push(fileId);
+                }
+            }
+        }
+
+        preCacheProgress = { total: uncached.length, done: 0, errors: 0 };
+        console.log('Found ' + uncached.length + ' images to pre-cache');
+
+        // Process in batches of 5 parallel requests
+        var batchSize = 5;
+        for (var i = 0; i < uncached.length; i += batchSize) {
+            var batch = uncached.slice(i, i + batchSize);
+
+            await Promise.all(batch.map(async function(fileId) {
+                try {
+                    var imgResult = await fetchZohoImage(fileId);
+                    await pool.query(
+                        'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
+                        [fileId, imgResult.buffer, imgResult.contentType]
+                    );
+                    preCacheProgress.done++;
+                    console.log('Pre-cached: ' + fileId + ' (' + preCacheProgress.done + '/' + preCacheProgress.total + ')');
+                } catch (err) {
+                    preCacheProgress.errors++;
+                    console.log('Pre-cache error: ' + fileId + ' - ' + err.message);
+                }
+            }));
+
+            // Small delay between batches to avoid rate limits
+            if (i + batchSize < uncached.length) {
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+
+        console.log('Pre-cache complete! Done: ' + preCacheProgress.done + ', Errors: ' + preCacheProgress.errors);
+    } catch (err) {
+        console.error('Pre-cache failed:', err.message);
+    } finally {
+        preCacheRunning = false;
+    }
+}
+
+// Endpoint to trigger pre-caching
+app.post('/api/images/precache', async function(req, res) {
+    if (preCacheRunning) {
+        return res.json({ status: 'already_running', progress: preCacheProgress });
+    }
+
+    // Start in background
+    preCacheImages();
+    res.json({ status: 'started', message: 'Pre-caching started in background' });
+});
+
+// Endpoint to check pre-cache progress
+app.get('/api/images/precache/status', function(req, res) {
+    res.json({
+        running: preCacheRunning,
+        progress: preCacheProgress
+    });
+});
+
 // Zoho status and cache stats
 app.get('/api/zoho/status', async function(req, res) {
     var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
@@ -1392,6 +1486,15 @@ function getHTML() {
     html += '<button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>';
     html += '<button class="btn btn-secondary" onclick="closeSettingsModal()" style="flex:1">Cancel</button>';
     html += '</div>';
+    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
+    html += '<div>';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Image Pre-Caching</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Pre-load all product images to speed up browsing. Only needs to run once after importing new data.</p>';
+    html += '<div style="display:flex;gap:1rem;align-items:center">';
+    html += '<button class="btn btn-secondary" onclick="startPreCache()" id="preCacheBtn" style="flex:1">🖼️ Pre-Cache Images</button>';
+    html += '<span id="preCacheStatus" style="font-size:0.8125rem;color:#86868b"></span>';
+    html += '</div>';
+    html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
 
@@ -1835,6 +1938,41 @@ function getHTML() {
     html += 'document.getElementById("settingsStatus").innerHTML = \'<span style="color:#34c759">✓ Settings saved!</span>\';';
     html += 'setTimeout(closeSettingsModal, 1000);';
     html += '} catch(e) { document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += '}';
+
+    // Pre-cache functions
+    html += 'var preCacheInterval = null;';
+    html += 'async function startPreCache() {';
+    html += 'var btn = document.getElementById("preCacheBtn");';
+    html += 'var status = document.getElementById("preCacheStatus");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Starting...";';
+    html += 'try {';
+    html += 'var res = await fetch("/api/images/precache", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.status === "already_running") { status.textContent = "Already running..."; }';
+    html += 'else { status.textContent = "Started!"; }';
+    html += 'preCacheInterval = setInterval(checkPreCacheProgress, 2000);';
+    html += 'checkPreCacheProgress();';
+    html += '} catch(e) { status.textContent = "Error: " + e.message; btn.disabled = false; btn.textContent = "🖼️ Pre-Cache Images"; }';
+    html += '}';
+    html += 'async function checkPreCacheProgress() {';
+    html += 'var btn = document.getElementById("preCacheBtn");';
+    html += 'var status = document.getElementById("preCacheStatus");';
+    html += 'try {';
+    html += 'var res = await fetch("/api/images/precache/status");';
+    html += 'var data = await res.json();';
+    html += 'if (data.running) {';
+    html += 'btn.textContent = "⏳ Caching...";';
+    html += 'status.textContent = data.progress.done + "/" + data.progress.total + " images";';
+    html += '} else {';
+    html += 'clearInterval(preCacheInterval);';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "🖼️ Pre-Cache Images";';
+    html += 'if (data.progress.total > 0) { status.innerHTML = \'<span style="color:#34c759">✓ Done! \' + data.progress.done + " cached</span>"; }';
+    html += 'else { status.textContent = "All images cached!"; }';
+    html += '}';
+    html += '} catch(e) { clearInterval(preCacheInterval); }';
     html += '}';
 
     // File upload
