@@ -1678,9 +1678,14 @@ function getHTML() {
     html += '.export-btn{background:#0088c2;color:white;border:none;padding:0.625rem 1.25rem;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}.export-btn:hover{background:#006699}';
 
     // Dashboard hybrid view
-    html += '.dashboard-layout{display:grid;grid-template-columns:380px 1fr;gap:1.5rem;align-items:start}';
+    html += '.dashboard-layout{display:grid;grid-template-columns:380px 1fr;gap:1.5rem;align-items:start;position:relative;transition:grid-template-columns 0.3s}';
+    html += '.dashboard-layout.sidebar-collapsed{grid-template-columns:0 1fr}';
+    html += '.dashboard-layout.sidebar-collapsed .dashboard-charts{opacity:0;pointer-events:none;overflow:hidden;width:0;padding:0;margin:0}';
     html += '@media(max-width:1200px){.dashboard-layout{grid-template-columns:1fr}}';
-    html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem}';
+    html += '.sidebar-toggle{position:absolute;left:0;top:0;background:#1e3a5f;color:white;border:none;padding:0.5rem 0.75rem;border-radius:0 8px 8px 0;font-size:0.75rem;cursor:pointer;z-index:10;transition:left 0.3s}';
+    html += '.sidebar-toggle:hover{background:#0088c2}';
+    html += '.dashboard-layout.sidebar-collapsed .sidebar-toggle{left:0}';
+    html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem;transition:opacity 0.3s,width 0.3s}';
     html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
     html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
     html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:4px}';
@@ -2465,10 +2470,13 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕ Clear month filter</button>\'; }';
     html += 'out += \'</div>\';';
-    // Main layout
-    html += 'out += \'<div class="dashboard-layout">\';';
+    // Main layout with collapsible sidebar
+    html += 'var sidebarCollapsed = state.sidebarCollapsed || false;';
+    html += 'out += \'<div class="dashboard-layout\' + (sidebarCollapsed ? " sidebar-collapsed" : "") + \'" id="dashboardLayout">\';';
+    // Toggle button
+    html += 'out += \'<button class="sidebar-toggle" onclick="toggleDashboardSidebar()" title="\' + (sidebarCollapsed ? "Show filters" : "Hide filters") + \'">\' + (sidebarCollapsed ? "◀ Show Filters" : "▶ Hide") + \'</button>\';';
     // Left column - charts
-    html += 'out += \'<div class="dashboard-charts">\';';
+    html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
     // Treemap
     html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3><div class="dashboard-treemap">\';';
     html += 'commSorted.forEach(function(entry, idx) {';
@@ -2549,6 +2557,15 @@ function getHTML() {
     html += 'document.getElementById("customerDisplay").textContent = cust;';
     html += 'updateClearButton();';
     html += 'loadData(); }';
+
+    // Toggle dashboard sidebar
+    html += 'function toggleDashboardSidebar() {';
+    html += 'state.sidebarCollapsed = !state.sidebarCollapsed;';
+    html += 'var layout = document.getElementById("dashboardLayout");';
+    html += 'if (layout) layout.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);';
+    html += 'var btn = layout.querySelector(".sidebar-toggle");';
+    html += 'if (btn) { btn.textContent = state.sidebarCollapsed ? "◀ Show Filters" : "▶ Hide"; btn.title = state.sidebarCollapsed ? "Show filters" : "Hide filters"; }';
+    html += '}';
 
     // Filter by month from dashboard timeline
     html += 'function filterByMonth(monthKey) {';
