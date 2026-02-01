@@ -2182,9 +2182,14 @@ function getHTML() {
     html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
     html += 'html += \'</div>\'; container.innerHTML = html; }';
 
-    // Summary view toggle functions
-    html += 'function setSummaryGroupBy(groupBy) { state.summaryGroupBy = groupBy; state.expandedRows = {}; renderData(); }';
-    html += 'function toggleRowExpand(key) { if (state.expandedRows[key]) delete state.expandedRows[key]; else state.expandedRows[key] = true; renderData(); }';
+    // Summary view toggle functions - using window for global access
+    html += 'window.setSummaryGroupBy = function(groupBy) { state.summaryGroupBy = groupBy; state.expandedRows = {}; renderData(); };';
+    html += 'window.toggleRowExpand = function(key) { if (state.expandedRows[key]) delete state.expandedRows[key]; else state.expandedRows[key] = true; renderData(); };';
+    // Event delegation for summary view clicks
+    html += 'document.addEventListener("click", function(e) {';
+    html += 'var btn = e.target.closest("[data-groupby]"); if (btn) { window.setSummaryGroupBy(btn.dataset.groupby); return; }';
+    html += 'var exp = e.target.closest("[data-expand]"); if (exp) { window.toggleRowExpand(exp.dataset.expand); return; }';
+    html += '});';
 
     // Render summary view - matrix of commodities/customers vs months with toggle
     html += 'function renderSummaryView(container, items) {';
@@ -2223,8 +2228,8 @@ function getHTML() {
     html += 'var out = \'<div class="summary-container">\';';
     // Toggle header
     html += 'out += \'<div class="summary-header"><div class="summary-toggle"><span>Group by:</span><div class="summary-toggle-btns">\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" onclick="setSummaryGroupBy(&#39;commodity&#39;)">Commodity</button>\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" onclick="setSummaryGroupBy(&#39;customer&#39;)">Customer</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" data-groupby="commodity">Commodity</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" data-groupby="customer">Customer</button>\';';
     html += 'out += \'</div></div>\';';
     html += 'if (groupBy === "commodity") { out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\'; }';
     html += 'out += \'</div>\';';
@@ -2237,7 +2242,7 @@ function getHTML() {
     html += 'var isExpanded = state.expandedRows[primary];';
     html += 'var rowClass = groupBy === "commodity" ? "comm-row-" + primary.toLowerCase().replace(/[^a-z]/g, "") : "";';
     html += 'if (groupBy === "commodity" && ["top","bottom","dress","sweater","jacket"].indexOf(primary.toLowerCase()) === -1) rowClass = "comm-row-other";';
-    html += 'out += \'<tr class="\' + rowClass + \'"><td><button class="expand-btn\' + (isExpanded ? " expanded" : "") + \'" onclick="toggleRowExpand(&#39;\' + primary.replace(/\'/g, "") + \'&#39;)">▶</button>\' + escapeHtml(primary) + \'</td>\';';
+    html += 'out += \'<tr class="\' + rowClass + \'"><td><button class="expand-btn\' + (isExpanded ? " expanded" : "") + \'" data-expand="\' + primary.replace(/["\\']/g, "") + \'">▶</button>\' + escapeHtml(primary) + \'</td>\';';
     html += 'sortedMonths.forEach(function(m) { var k = primary + "|" + m; var cell = mainData[k] || { dollars: 0, units: 0 }; out += \'<td><div class="summary-cell\' + (cell.dollars > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(cell.dollars) + \'</span><span class="units">\' + formatNumber(cell.units) + \' units</span></div></td>\'; });';
     html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(primaryTotals[primary].dollars) + \'</span><span class="units">\' + formatNumber(primaryTotals[primary].units) + \' units</span></div></td></tr>\';';
     // Expanded sub-rows
