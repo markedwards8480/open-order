@@ -1476,7 +1476,7 @@ app.get('/', function(req, res) {
 });
 
 function getHTML() {
-    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Open Orders Dashboard</title>';
+    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Mark Edwards - Open Orders Dashboard</title>';
     html += '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
     html += '<style>';
 
@@ -1655,7 +1655,7 @@ function getHTML() {
     // Header
     html += '<header class="header">';
     html += '<div class="mode-toggle"><button class="mode-btn active" data-mode="sales" onclick="switchMode(\'sales\')">📦 Sales Orders</button><button class="mode-btn" data-mode="po" onclick="switchMode(\'po\')">🚢 Import POs</button></div>';
-    html += '<h1><span id="dashboardTitle">Open Orders</span> Dashboard</h1>';
+    html += '<h1><span style="color:#1e3a5f">Mark Edwards</span> <span id="dashboardTitle">Open Orders</span> Dashboard</h1>';
     html += '<div class="header-right">';
     html += '<button class="btn btn-secondary" onclick="showSettingsModal()">⚙️ Settings</button>';
     html += '<button class="btn btn-secondary" onclick="showUploadModal()">Import CSV</button>';
@@ -2542,6 +2542,6 @@ function getHTML() {
 // Start server
 initDB().then(function() {
     app.listen(PORT, function() {
-        console.log('Open Orders Dashboard running on port ' + PORT);
+        console.log('Mark Edwards Open Orders Dashboard running on port ' + PORT);
     });
 });
