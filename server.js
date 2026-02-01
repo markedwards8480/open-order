@@ -2549,7 +2549,7 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span>\';';
     html += 'if (state.filters.month) { out += \' <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
     html += 'out += \' <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
-    html += 'commSorted.slice(0,12).forEach(function(entry, idx) {';
+    html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
     html += 'var size = Math.max(Math.sqrt(pct) * 18, 8);';
