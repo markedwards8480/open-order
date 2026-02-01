@@ -2371,10 +2371,12 @@ function getHTML() {
     html += '});';
     // Now load settings to uncheck excluded FYs
     html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
+    html += 'console.log("Loaded settings for FY checkboxes:", settings);';
     html += 'if (settings.includeFiscalYears) {';
     html += 'var included = settings.includeFiscalYears.split(",");';
-    html += 'document.querySelectorAll(".fy-include-cb").forEach(function(cb) { cb.checked = included.includes(cb.value); });';
-    html += '}';
+    html += 'console.log("Included FYs from settings:", included);';
+    html += 'document.querySelectorAll(".fy-include-cb").forEach(function(cb) { console.log("CB", cb.value, "in", included, "?", included.includes(cb.value)); cb.checked = included.includes(cb.value); });';
+    html += '} else { console.log("No includeFiscalYears setting found"); }';
     html += '});';
     html += '});';
     html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
@@ -2385,12 +2387,15 @@ function getHTML() {
     html += 'async function saveSettings() {';
     html += 'var fy = document.getElementById("defaultFYSelect").value;';
     html += 'var includedFYs = Array.from(document.querySelectorAll(".fy-include-cb:checked")).map(function(cb) { return cb.value; }).join(",");';
+    html += 'console.log("Saving settings - defaultFY:", fy, "includedFYs:", includedFYs);';
     html += 'try {';
-    html += 'await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "defaultFiscalYear", value: fy }) });';
-    html += 'await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "includeFiscalYears", value: includedFYs }) });';
+    html += 'var r1 = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "defaultFiscalYear", value: fy }) });';
+    html += 'var d1 = await r1.json(); console.log("Save defaultFY result:", d1);';
+    html += 'var r2 = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "includeFiscalYears", value: includedFYs }) });';
+    html += 'var d2 = await r2.json(); console.log("Save includeFYs result:", d2);';
     html += 'document.getElementById("settingsStatus").innerHTML = \'<span style="color:#34c759">✓ Settings saved! Reloading...</span>\';';
     html += 'setTimeout(function() { location.reload(); }, 1000);';
-    html += '} catch(e) { document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += '} catch(e) { console.error("Save error:", e); document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
     html += '}';
 
     // Pre-cache functions
