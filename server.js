@@ -1610,6 +1610,21 @@ function getHTML() {
     html += '.dashboard-style-comm{font-size:0.625rem;color:#0088c2;margin-top:2px}';
     html += '.dashboard-style-stats{display:flex;justify-content:space-between;margin-top:4px;font-size:0.6875rem;color:#666}';
     html += '.dashboard-style-stats .money{color:#34c759;font-weight:600}';
+    // Dashboard timeline
+    html += '.dashboard-timeline{background:white;border-radius:16px;padding:1rem 1.5rem;margin-bottom:1rem;border:1px solid rgba(0,0,0,0.04)}';
+    html += '.timeline-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}';
+    html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.9375rem}';
+    html += '.timeline-hint{font-size:0.75rem;color:#86868b}';
+    html += '.timeline-bars{display:flex;gap:4px;align-items:flex-end;height:80px}';
+    html += '.timeline-month{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:4px;border-radius:6px;transition:background 0.15s}';
+    html += '.timeline-month:hover{background:#f0f4f8}';
+    html += '.timeline-month.active{background:#e3f2fd}';
+    html += '.timeline-bar{width:100%;background:linear-gradient(to top,#0088c2,#4da6d9);border-radius:4px 4px 0 0;min-height:4px;transition:height 0.3s}';
+    html += '.timeline-month.active .timeline-bar{background:linear-gradient(to top,#1e3a5f,#0088c2)}';
+    html += '.timeline-value{font-size:0.625rem;color:#666;margin-top:4px;font-weight:500}';
+    html += '.timeline-label{font-size:0.6875rem;color:#1e3a5f;font-weight:500}';
+    html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:0.375rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.75rem}';
+    html += '.timeline-clear:hover{background:#d63030}';
 
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
@@ -1725,7 +1740,7 @@ function getHTML() {
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
     html += '</div>';
 
     // Main content
@@ -1779,7 +1794,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "monthly", sortBy: "value", data: null };';
+    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -2288,7 +2303,7 @@ function getHTML() {
     html += 'function renderDashboardView(container, items) {';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for dashboard</h3><p>Import data to see the dashboard</p></div>\'; return; }';
     // Build data for charts
-    html += 'var customerData = {}; var commodityData = {};';
+    html += 'var customerData = {}; var commodityData = {}; var monthlyData = {};';
     html += 'items.forEach(function(item) {';
     html += 'var comm = item.commodity || "Other";';
     html += 'item.orders.forEach(function(o) {';
@@ -2297,15 +2312,40 @@ function getHTML() {
     html += 'customerData[cust] += o.total_amount || 0;';
     html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
     html += 'commodityData[comm] += o.total_amount || 0;';
+    html += 'var monthKey = o.delivery_date ? o.delivery_date.substring(0,7) : "9999-99";';
+    html += 'if (!monthlyData[monthKey]) monthlyData[monthKey] = 0;';
+    html += 'monthlyData[monthKey] += o.total_amount || 0;';
     html += '}); });';
     // Sort data
     html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
     html += 'var commSorted = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
     html += 'var total = commSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
+    // Sort months
+    html += 'var sortedMonths = Object.keys(monthlyData).sort().filter(function(m) { return m !== "9999-99"; });';
+    html += 'var maxMonthValue = Math.max.apply(null, Object.values(monthlyData));';
     // Sort items by value
     html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
     // Build HTML
-    html += 'var out = \'<div class="dashboard-layout">\';';
+    html += 'var out = \'\';';
+    // Month timeline at top
+    html += 'out += \'<div class="dashboard-timeline"><div class="timeline-header"><span class="timeline-title">📅 Delivery Timeline</span><span class="timeline-hint">(click month to filter)</span></div><div class="timeline-bars">\';';
+    html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'sortedMonths.forEach(function(monthKey) {';
+    html += 'var value = monthlyData[monthKey];';
+    html += 'var pct = (value / maxMonthValue * 100).toFixed(0);';
+    html += 'var parts = monthKey.split("-");';
+    html += 'var label = months[parseInt(parts[1])-1] + " " + parts[0].slice(2);';
+    html += 'var isActive = state.filters.month === monthKey;';
+    html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
+    html += 'out += \'<div class="timeline-bar" style="height:\' + Math.max(pct, 5) + \'%"></div>\';';
+    html += 'out += \'<div class="timeline-value">$\' + (value/1000).toFixed(0) + \'K</div>\';';
+    html += 'out += \'<div class="timeline-label">\' + label + \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div>\';';
+    html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕ Clear month filter</button>\'; }';
+    html += 'out += \'</div>\';';
+    // Main layout
+    html += 'out += \'<div class="dashboard-layout">\';';
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts">\';';
     // Treemap
@@ -2367,6 +2407,20 @@ function getHTML() {
     html += 'checkboxes.forEach(function(cb) { cb.checked = cb.value === cust; });';
     html += 'state.filters.customers = [cust];';
     html += 'document.getElementById("customerDisplay").textContent = cust;';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Filter by month from dashboard timeline
+    html += 'function filterByMonth(monthKey) {';
+    html += 'document.getElementById("monthFilter").value = monthKey;';
+    html += 'state.filters.month = monthKey;';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Clear month filter from dashboard
+    html += 'function clearMonthFilter() {';
+    html += 'document.getElementById("monthFilter").value = "";';
+    html += 'state.filters.month = "";';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
