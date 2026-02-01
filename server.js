@@ -136,6 +136,14 @@ async function initDB() {
         )`);
         await pool.query('CREATE INDEX IF NOT EXISTS idx_image_cache_file_id ON image_cache(file_id)');
 
+        // App settings table
+        await pool.query(`CREATE TABLE IF NOT EXISTS app_settings (
+            id SERIAL PRIMARY KEY,
+            setting_key VARCHAR(100) UNIQUE NOT NULL,
+            setting_value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`);
+
         // Load stored Zoho token
         var tokenResult = await pool.query('SELECT * FROM zoho_tokens ORDER BY id DESC LIMIT 1');
         if (tokenResult.rows.length > 0) {
@@ -535,6 +543,43 @@ app.get('/api/dashboard', async function(req, res) {
             byCommodity: byCommodityResult.rows,
             upcoming: upcomingResult.rows[0]
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================
+// ADMIN SETTINGS ENDPOINTS
+// ============================================
+
+// Get all settings
+app.get('/api/settings', async function(req, res) {
+    try {
+        var result = await pool.query('SELECT setting_key, setting_value FROM app_settings');
+        var settings = {};
+        result.rows.forEach(function(row) {
+            settings[row.setting_key] = row.setting_value;
+        });
+        res.json(settings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update a setting
+app.post('/api/settings', async function(req, res) {
+    try {
+        var key = req.body.key;
+        var value = req.body.value;
+        if (!key) return res.status(400).json({ error: 'Setting key required' });
+
+        await pool.query(
+            `INSERT INTO app_settings (setting_key, setting_value, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
+            [key, value]
+        );
+        res.json({ success: true, key: key, value: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1223,6 +1268,7 @@ function getHTML() {
     html += '<header class="header">';
     html += '<h1><span>Open Orders</span> Dashboard</h1>';
     html += '<div class="header-right">';
+    html += '<button class="btn btn-secondary" onclick="showSettingsModal()">⚙️ Settings</button>';
     html += '<button class="btn btn-secondary" onclick="showUploadModal()">Import CSV</button>';
     html += '<a href="' + (process.env.PRODUCT_CATALOG_URL || '#') + '" class="btn btn-secondary" target="_blank">Product Catalog</a>';
     html += '</div></header>';
@@ -1257,6 +1303,24 @@ function getHTML() {
     // Upload modal
     html += '<div class="modal upload-modal" id="uploadModal"><div class="modal-content"><button class="modal-close" onclick="closeUploadModal()">&times;</button><h2>Import Sales Orders</h2><p style="color:#86868b;margin-top:0.5rem">Upload a CSV file with your sales order data</p><div class="upload-area" id="uploadArea"><input type="file" id="fileInput" accept=".csv"><div class="upload-icon">📄</div><div class="upload-text">Drag & drop your CSV here or <strong>browse</strong></div></div><div class="upload-progress" id="uploadProgress"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><p style="margin-top:0.5rem;font-size:0.875rem;color:#86868b" id="uploadStatus">Uploading...</p></div></div></div>';
 
+    // Settings modal
+    html += '<div class="modal settings-modal" id="settingsModal"><div class="modal-content" style="max-width:450px;padding:2rem">';
+    html += '<button class="modal-close" onclick="closeSettingsModal()">&times;</button>';
+    html += '<h2>⚙️ Settings</h2>';
+    html += '<div style="margin-top:1.5rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Default Fiscal Year</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">This fiscal year will be selected automatically when the dashboard loads.</p>';
+    html += '<select id="defaultFYSelect" class="filter-select" style="width:100%;padding:0.75rem">';
+    html += '<option value="">No Default (show all)</option>';
+    html += '</select>';
+    html += '</div>';
+    html += '<div style="margin-top:2rem;display:flex;gap:1rem">';
+    html += '<button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>';
+    html += '<button class="btn btn-secondary" onclick="closeSettingsModal()" style="flex:1">Cancel</button>';
+    html += '</div>';
+    html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
+    html += '</div></div>';
+
     // Chat bubble
     html += '<div class="chat-bubble" onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg><span class="chat-bubble-label">Ask AI</span></div>';
 
@@ -1285,6 +1349,7 @@ function getHTML() {
     html += 'data.fiscalYears = data.fiscalYears || [];';
     html += 'if (data.fiscalYears.length === 0) { for(var fy = currentYear + 1; fy >= currentYear - 3; fy--) data.fiscalYears.push(fy); }';
     html += 'data.fiscalYears.forEach(function(fy) { var opt = document.createElement("option"); opt.value = fy; opt.textContent = "FY" + fy; fySelect.appendChild(opt); });';
+    html += 'if (state.filters.fiscalYear) { fySelect.value = state.filters.fiscalYear; fySelect.classList.add("active"); }';
     // Customer multi-select
     html += 'var custDropdown = document.getElementById("customerDropdown");';
     html += 'custDropdown.innerHTML = \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllCustomers()">Select All</button><button class="clear-all" onclick="clearAllCustomers()">Clear All</button></div>\';';
@@ -1679,6 +1744,25 @@ function getHTML() {
     html += 'function showUploadModal() { document.getElementById("uploadModal").classList.add("active"); }';
     html += 'function closeUploadModal() { document.getElementById("uploadModal").classList.remove("active"); document.getElementById("uploadProgress").classList.remove("active"); }';
 
+    // Settings modal
+    html += 'function showSettingsModal() {';
+    html += 'document.getElementById("settingsModal").classList.add("active");';
+    html += 'var select = document.getElementById("defaultFYSelect");';
+    html += 'select.innerHTML = \'<option value="">No Default (show all)</option>\';';
+    html += 'var fySelect = document.getElementById("fiscalYearFilter");';
+    html += 'for (var i = 1; i < fySelect.options.length; i++) { var opt = fySelect.options[i]; select.innerHTML += \'<option value="\' + opt.value + \'">\' + opt.textContent + \'</option>\'; }';
+    html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) { if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear; });';
+    html += '}';
+    html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
+    html += 'async function saveSettings() {';
+    html += 'var fy = document.getElementById("defaultFYSelect").value;';
+    html += 'try {';
+    html += 'await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "defaultFiscalYear", value: fy }) });';
+    html += 'document.getElementById("settingsStatus").innerHTML = \'<span style="color:#34c759">✓ Settings saved!</span>\';';
+    html += 'setTimeout(closeSettingsModal, 1000);';
+    html += '} catch(e) { document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += '}';
+
     // File upload
     html += 'var uploadArea = document.getElementById("uploadArea");';
     html += 'var fileInput = document.getElementById("fileInput");';
@@ -1766,9 +1850,15 @@ function getHTML() {
     // Modal click outside
     html += 'document.getElementById("styleModal").addEventListener("click", function(e) { if (e.target === this) closeModal(); });';
     html += 'document.getElementById("uploadModal").addEventListener("click", function(e) { if (e.target === this) closeUploadModal(); });';
+    html += 'document.getElementById("settingsModal").addEventListener("click", function(e) { if (e.target === this) closeSettingsModal(); });';
 
-    // Init
-    html += 'loadFilters(); loadData();';
+    // Init - load settings first to apply default fiscal year
+    html += '(async function() {';
+    html += 'try { var settings = await fetch("/api/settings").then(r => r.json());';
+    html += 'if (settings.defaultFiscalYear) { state.filters.fiscalYear = settings.defaultFiscalYear; }';
+    html += '} catch(e) { console.log("No settings found, using defaults"); }';
+    html += 'await loadFilters(); loadData();';
+    html += '})();';
 
     html += '</script></body></html>';
     return html;
