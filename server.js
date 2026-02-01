@@ -1998,6 +1998,25 @@ function getHTML() {
     html += 'out += \'</tbody></table></div>\';';
     html += 'container.innerHTML = out; }';
 
+    // Helper: Get filter context string for display
+    html += 'function getFilterContext() {';
+    html += 'var parts = [];';
+    html += 'if (state.filters.fiscalYear) parts.push("FY" + state.filters.fiscalYear);';
+    html += 'if (state.filters.year) parts.push(state.filters.year);';
+    html += 'if (state.filters.month) { var m = state.filters.month; var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p = m.split("-"); parts.push(monthNames[parseInt(p[1])-1] + " " + p[0]); }';
+    html += 'if (state.filters.customers.length > 0) parts.push(state.filters.customers.length === 1 ? state.filters.customers[0] : state.filters.customers.length + " customers");';
+    html += 'if (state.filters.commodity) parts.push(state.filters.commodity);';
+    html += 'if (state.filters.status && state.filters.status !== "All") parts.push(state.filters.status + " orders");';
+    html += 'return parts.length > 0 ? parts.join(" · ") : "All Data";';
+    html += '}';
+
+    // Helper: Render filter context header
+    html += 'function renderFilterHeader(title, icon) {';
+    html += 'return \'<div style="background:linear-gradient(135deg,#1e3a5f 0%,#0088c2 100%);color:white;padding:1rem 1.5rem;margin-bottom:1rem;border-radius:12px;display:flex;justify-content:space-between;align-items:center">\' +';
+    html += '\'<div><span style="font-size:1.5rem;margin-right:0.5rem">\' + icon + \'</span><span style="font-size:1.25rem;font-weight:600">\' + title + \'</span></div>\' +';
+    html += '\'<div style="background:rgba(255,255,255,0.2);padding:0.5rem 1rem;border-radius:8px;font-size:0.875rem">\' + getFilterContext() + \'</div></div>\';';
+    html += '}';
+
     // Render Top Movers view - compact ranked table
     html += 'function renderTopMoversView(container, items) {';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No orders found</h3></div>\'; return; }';
@@ -2018,7 +2037,8 @@ function getHTML() {
     html += 'else if (state.sortBy === "commodity") sorted.sort(function(a,b) { return (a.commodity || "ZZZ").localeCompare(b.commodity || "ZZZ"); });';
     html += 'else sorted.sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
     // Render table
-    html += 'var out = \'<div style="padding:1rem"><table class="topmovers-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">\';';
+    html += 'var out = \'<div style="padding:1rem">\' + renderFilterHeader("Top Movers", "🏆");';
+    html += 'out += \'<table class="topmovers-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">\';';
     html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left"><th style="padding:0.75rem;width:50px">#</th><th style="padding:0.75rem">Style</th><th style="padding:0.75rem">Name</th><th style="padding:0.75rem">Commodity</th><th style="padding:0.75rem;text-align:right">Units</th><th style="padding:0.75rem;text-align:right">Value</th><th style="padding:0.75rem;text-align:center">Orders</th><th style="padding:0.75rem;text-align:center">Customers</th></tr></thead><tbody>\';';
     html += 'sorted.slice(0, 50).forEach(function(item, idx) {';
     html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#f9fafb";';
@@ -2056,7 +2076,7 @@ function getHTML() {
     html += 'var sortedComms = Object.values(commodityData).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
     html += 'var customerList = Array.from(allCustomers).sort();';
     // Render
-    html += 'var out = \'<div style="padding:1rem"><h2 style="color:#1e3a5f;margin-bottom:1rem">🎯 Opportunity Finder</h2>\';';
+    html += 'var out = \'<div style="padding:1rem">\' + renderFilterHeader("Opportunity Finder", "🎯");';
     html += 'out += \'<p style="color:#86868b;margin-bottom:1.5rem">Commodities with multiple customers = proven winners. Customers missing = opportunity to sell!</p>\';';
     html += 'sortedComms.forEach(function(comm) {';
     html += 'var missingCustomers = customerList.filter(function(c) { return !comm.customers.has(c); });';
