@@ -1622,7 +1622,7 @@ function getHTML() {
 
     // Stats bar
     html += '.stats-bar{background:white;padding:1.5rem 2rem;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;gap:3rem;flex-wrap:wrap;align-items:center}';
-    html += '.stat-box{}.stat-value{font-size:1.75rem;font-weight:600;color:#1e3a5f;letter-spacing:-0.02em}.stat-value.money::before{content:"$"}.stat-label{color:#86868b;font-size:0.75rem;font-weight:500;text-transform:uppercase;letter-spacing:0.02em;margin-top:0.125rem}';
+    html += '.stat-box{}.stat-value{font-size:1.75rem;font-weight:600;color:#1e3a5f;letter-spacing:-0.02em}.stat-label{color:#86868b;font-size:0.75rem;font-weight:500;text-transform:uppercase;letter-spacing:0.02em;margin-top:0.125rem}';
     html += '.stat-box.highlight .stat-value{color:#0088c2}';
 
     // Filters bar
@@ -2011,7 +2011,7 @@ function getHTML() {
     html += 'document.getElementById("statCustomers").textContent = formatNumber(stats.customer_count || 0);';
     html += 'document.getElementById("statStyles").textContent = formatNumber(stats.style_count || 0);';
     html += 'document.getElementById("statUnits").textContent = formatNumber(stats.total_qty || 0);';
-    html += 'document.getElementById("statDollars").textContent = formatNumber(Math.round(stats.total_dollars || 0));}';
+    html += 'document.getElementById("statDollars").textContent = formatMoney(stats.total_dollars || 0);}';
 
     // Update stats for PO mode
     html += 'function updateStatsPO(stats) {';
@@ -2019,7 +2019,7 @@ function getHTML() {
     html += 'document.getElementById("statCustomers").textContent = formatNumber(stats.vendor_count || 0);';
     html += 'document.getElementById("statStyles").textContent = formatNumber(stats.style_count || 0);';
     html += 'document.getElementById("statUnits").textContent = formatNumber(stats.total_qty || 0);';
-    html += 'document.getElementById("statDollars").textContent = formatNumber(Math.round(stats.total_dollars || 0));}';
+    html += 'document.getElementById("statDollars").textContent = formatMoney(stats.total_dollars || 0);}';
 
     // Render PO content
     html += 'function renderPOContent(data) {';
@@ -2954,6 +2954,7 @@ function getHTML() {
 
     // Helpers
     html += 'function formatNumber(n) { return n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","); }';
+    html += 'function formatMoney(n) { n = n || 0; if (n >= 1000000) { var m = (n / 1000000).toFixed(1); if (m.endsWith(".0")) m = m.slice(0,-2); return "$" + m + "M"; } return "$" + formatNumber(Math.round(n)); }';
     html += 'function escapeHtml(str) { if (!str) return ""; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'var monthNamesFull = ["January","February","March","April","May","June","July","August","September","October","November","December"];';
