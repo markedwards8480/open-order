@@ -1064,6 +1064,23 @@ app.get('/api/debug/totals', async function(req, res) {
             GROUP BY status
         `);
 
+        // Date range in database
+        var dateRange = await pool.query(`
+            SELECT MIN(delivery_date) as min_date, MAX(delivery_date) as max_date,
+                   COUNT(CASE WHEN delivery_date IS NULL THEN 1 END) as null_dates
+            FROM order_items
+        `);
+
+        // Sample of dates
+        var sampleDates = await pool.query(`
+            SELECT DISTINCT delivery_date, COUNT(*) as count
+            FROM order_items
+            WHERE delivery_date IS NOT NULL
+            GROUP BY delivery_date
+            ORDER BY delivery_date DESC
+            LIMIT 20
+        `);
+
         // FY2026 (June 2025 - May 2026)
         var fy2026Result = await pool.query(`
             SELECT COUNT(*) as records, SUM(total_amount) as dollars, SUM(quantity) as units
@@ -1080,12 +1097,11 @@ app.get('/api/debug/totals', async function(req, res) {
             ORDER BY dollars DESC
         `);
 
-        // Ross customers specifically
-        var rossResult = await pool.query(`
+        // Ross customers specifically (ALL data, not just FY2026)
+        var rossAllTime = await pool.query(`
             SELECT customer, status, COUNT(*) as records, SUM(total_amount) as dollars
             FROM order_items
-            WHERE (customer ILIKE '%ross%' OR customer ILIKE '%dd%')
-            AND delivery_date >= '2025-06-01' AND delivery_date < '2026-06-01'
+            WHERE (customer ILIKE '%ross%' OR customer ILIKE '%dd%forever%')
             GROUP BY customer, status
             ORDER BY customer, status
         `);
@@ -1093,9 +1109,11 @@ app.get('/api/debug/totals', async function(req, res) {
         res.json({
             allData: totalResult.rows[0],
             byStatus: statusResult.rows,
+            dateRange: dateRange.rows[0],
+            sampleDates: sampleDates.rows,
             fy2026: fy2026Result.rows[0],
             customersFY2026: customerFY2026.rows,
-            rossCustomersFY2026: rossResult.rows
+            rossCustomersAllTime: rossAllTime.rows
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
