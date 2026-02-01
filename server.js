@@ -963,6 +963,44 @@ app.get('/api/debug/dates', async function(req, res) {
     }
 });
 
+// Debug endpoint to test fiscal year filter
+app.get('/api/debug/fiscalyear/:fy', async function(req, res) {
+    try {
+        var fy = req.params.fy;
+        var fyInt = parseInt(fy);
+        var fyStart = (fyInt - 1) + '-06-01';
+        var fyEnd = fyInt + '-05-31';
+
+        // Test the exact filter we use in /api/orders
+        var filterTest = await pool.query(
+            "SELECT COUNT(*) as total FROM order_items WHERE status IN ('Open', 'Partial') AND delivery_date::date >= $1::date AND delivery_date::date <= $2::date",
+            [fyStart, fyEnd]
+        );
+
+        // Check if any May of previous year sneaks through
+        var may2025Check = await pool.query(
+            "SELECT COUNT(*) as may_count FROM order_items WHERE status IN ('Open', 'Partial') AND delivery_date::date >= $1::date AND delivery_date::date <= $2::date AND TO_CHAR(delivery_date, 'YYYY-MM') = $3",
+            [fyStart, fyEnd, (fyInt - 1) + '-05']
+        );
+
+        // Get the actual months that would be returned
+        var monthsReturned = await pool.query(
+            "SELECT TO_CHAR(delivery_date, 'YYYY-MM') as month, COUNT(*) as count FROM order_items WHERE status IN ('Open', 'Partial') AND delivery_date::date >= $1::date AND delivery_date::date <= $2::date GROUP BY TO_CHAR(delivery_date, 'YYYY-MM') ORDER BY month",
+            [fyStart, fyEnd]
+        );
+
+        res.json({
+            fiscalYear: fy,
+            filterRange: { start: fyStart, end: fyEnd },
+            totalRowsMatching: parseInt(filterTest.rows[0].total),
+            mayPreviousYearCount: parseInt(may2025Check.rows[0].may_count),
+            monthsInResults: monthsReturned.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Debug endpoint to check a specific style's image
 app.get('/api/debug/style/:styleNumber', async function(req, res) {
     try {
