@@ -2506,7 +2506,8 @@ function getHTML() {
     html += 'out += \'<button class="sidebar-toggle" onclick="toggleDashboardSidebar()" title="Show filters">☰ Filters</button>\';';
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
-    // Mini stacked bar chart with hide link in header
+    // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
+    html += 'if (!state.filters.month) {';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     // Build stacked bars
     html += 'out += \'<div class="mini-stacked">\';';
@@ -2542,10 +2543,12 @@ function getHTML() {
     html += 'out += \'<div class="legend-item" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)"><div class="legend-color" style="background:\' + colors[idx] + \'"></div>\' + comm + \'</div>\';';
     html += '});';
     html += 'out += \'</div>\';';
-    html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
     html += 'out += \'</div>\';';
-    // Treemap (compact version)
-    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity</h3><div class="dashboard-treemap">\';';
+    html += '}'; // End of if (!state.filters.month)
+    // Treemap (compact version) - always show, with hide link when stacked bar is hidden
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span>\';';
+    html += 'if (state.filters.month) { out += \' <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
+    html += 'out += \' <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
     html += 'commSorted.slice(0,12).forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
@@ -2555,7 +2558,9 @@ function getHTML() {
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
-    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';';
+    html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
+    html += 'out += \'</div>\';';
     // Top customers (using full data from API)
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
     html += 'var topCust = custSorted.slice(0, 8);';
