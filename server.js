@@ -380,6 +380,16 @@ app.get('/api/orders', async function(req, res) {
         `;
         var monthlyResult = await pool.query(monthlyQuery, params);
 
+        // Get monthly breakdown BY commodity (for stacked bar chart)
+        var monthlyByCommodityQuery = `
+            SELECT TO_CHAR(delivery_date, 'YYYY-MM') as month, COALESCE(commodity, 'Other') as commodity, SUM(total_amount) as total_dollars
+            FROM order_items
+            ${whereClause}
+            GROUP BY TO_CHAR(delivery_date, 'YYYY-MM'), commodity
+            ORDER BY TO_CHAR(delivery_date, 'YYYY-MM'), total_dollars DESC
+        `;
+        var monthlyByCommodityResult = await pool.query(monthlyByCommodityQuery, params);
+
         // YoY Comparison: Get previous fiscal year data if a fiscal year is selected
         var prevYearCommodity = [];
         var prevYearCustomer = [];
@@ -449,6 +459,7 @@ app.get('/api/orders', async function(req, res) {
             commodityBreakdown: commodityResult.rows,
             customerBreakdown: customerResult.rows,
             monthlyBreakdown: monthlyResult.rows,
+            monthlyByCommodity: monthlyByCommodityResult.rows,
             prevYearCommodity: prevYearCommodity,
             prevYearCustomer: prevYearCustomer,
             missingCustomers: missingCustomers,
@@ -1690,6 +1701,16 @@ function getHTML() {
     html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem;transition:opacity 0.3s,width 0.3s;position:relative}';
     html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
     html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
+    // Mini stacked bar chart
+    html += '.mini-stacked{display:flex;gap:3px;align-items:flex-end;height:120px}';
+    html += '.mini-stacked-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;transition:opacity 0.15s}';
+    html += '.mini-stacked-bar:hover{opacity:0.85}';
+    html += '.mini-stacked-segment{transition:height 0.3s}';
+    html += '.mini-stacked-label{font-size:0.6rem;color:#666;text-align:center;margin-top:4px;white-space:nowrap}';
+    html += '.mini-stacked-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #eee}';
+    html += '.legend-item{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:#666;cursor:pointer;padding:2px 4px;border-radius:3px}';
+    html += '.legend-item:hover{background:#f0f4f8}';
+    html += '.legend-color{width:10px;height:10px;border-radius:2px}';
     html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:4px}';
     html += '.treemap-item{padding:8px;color:white;border-radius:6px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-width:60px;flex-grow:1}';
     html += '.treemap-item:hover{transform:scale(1.03);box-shadow:0 4px 12px rgba(0,0,0,0.15)}';
@@ -2449,6 +2470,15 @@ function getHTML() {
     html += '});';
     html += 'var sortedMonths = Object.keys(monthlyData).sort().filter(function(m) { return m && m !== "9999-99"; });';
     html += 'var maxMonthValue = sortedMonths.length > 0 ? Math.max.apply(null, sortedMonths.map(function(m) { return monthlyData[m].dollars; })) : 1;';
+    // Monthly by commodity for stacked bar
+    html += 'var monthlyByComm = {};';
+    html += '(data.monthlyByCommodity || []).forEach(function(r) {';
+    html += 'if (!r.month || r.month === "9999-99") return;';
+    html += 'if (!monthlyByComm[r.month]) monthlyByComm[r.month] = {};';
+    html += 'monthlyByComm[r.month][r.commodity || "Other"] = parseFloat(r.total_dollars) || 0;';
+    html += '});';
+    // Get top commodities for legend (limit to 8)
+    html += 'var topComms = commSorted.slice(0, 8).map(function(c) { return c[0]; });';
     // Sort items by value (these are still top 500 for display)
     html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
     // Build HTML
@@ -2476,16 +2506,40 @@ function getHTML() {
     html += 'out += \'<button class="sidebar-toggle" onclick="toggleDashboardSidebar()" title="Show filters">☰ Filters</button>\';';
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
-    // Treemap with hide link in header
-    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3><div class="dashboard-treemap">\';';
-    html += 'commSorted.forEach(function(entry, idx) {';
-    html += 'var comm = entry[0], value = entry[1];';
-    html += 'var pct = (value / total * 100);';
-    html += 'var size = Math.max(Math.sqrt(pct) * 20, 8);';
-    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 15) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
-    html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
-    html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
-    html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
+    // Mini stacked bar chart with hide link in header
+    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
+    // Build stacked bars
+    html += 'out += \'<div class="mini-stacked">\';';
+    html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'sortedMonths.forEach(function(monthKey) {';
+    html += 'var monthData = monthlyByComm[monthKey] || {};';
+    html += 'var monthTotal = Object.values(monthData).reduce(function(a,v) { return a + v; }, 0);';
+    html += 'var barHeight = maxMonthValue > 0 ? (monthTotal / maxMonthValue * 100) : 0;';
+    html += 'var parts = monthKey.split("-");';
+    html += 'var monthName = monthNames[parseInt(parts[1])-1];';
+    html += 'out += \'<div class="mini-stacked-bar" style="height:100%">\';';
+    html += 'out += \'<div style="height:\' + barHeight + \'%;display:flex;flex-direction:column;justify-content:flex-end">\';';
+    // Build segments for each commodity
+    html += 'topComms.forEach(function(comm, idx) {';
+    html += 'var val = monthData[comm] || 0;';
+    html += 'if (val > 0 && monthTotal > 0) {';
+    html += 'var segPct = (val / monthTotal * 100).toFixed(1);';
+    html += 'out += \'<div class="mini-stacked-segment" style="height:\' + segPct + \'%;background:\' + colors[idx] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)" title="\' + comm + \': $\' + Math.round(val/1000) + \'K"></div>\';';
+    html += '}});';
+    // Add "Other" segment
+    html += 'var otherVal = monthTotal - topComms.reduce(function(a,c) { return a + (monthData[c] || 0); }, 0);';
+    html += 'if (otherVal > 0 && monthTotal > 0) {';
+    html += 'var otherPct = (otherVal / monthTotal * 100).toFixed(1);';
+    html += 'out += \'<div class="mini-stacked-segment" style="height:\' + otherPct + \'%;background:#c7d1d9" title="Other: $\' + Math.round(otherVal/1000) + \'K"></div>\';';
+    html += '}';
+    html += 'out += \'</div><div class="mini-stacked-label">\' + monthName + \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div>\';';
+    // Legend
+    html += 'out += \'<div class="mini-stacked-legend">\';';
+    html += 'topComms.slice(0,6).forEach(function(comm, idx) {';
+    html += 'var val = commSorted.find(function(c) { return c[0] === comm; });';
+    html += 'out += \'<div class="legend-item" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)"><div class="legend-color" style="background:\' + colors[idx] + \'"></div>\' + comm + \'</div>\';';
     html += '});';
     html += 'out += \'</div>\';';
     html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
