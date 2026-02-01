@@ -331,7 +331,10 @@ app.get('/api/orders', async function(req, res) {
                     'unit_price', unit_price,
                     'total_amount', total_amount,
                     'delivery_date', delivery_date,
-                    'status', status
+                    'status', status,
+                    'po_unit_price', po_unit_price,
+                    'po_total', po_total,
+                    'po_quantity', po_quantity
                 ) ORDER BY delivery_date, so_number) as orders,
                 SUM(quantity) as total_qty,
                 SUM(total_amount) as total_dollars,
@@ -1814,6 +1817,8 @@ function getHTML() {
     html += '.style-image{height:200px;background:#f5f5f7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}.style-image img{max-width:90%;max-height:90%;object-fit:contain}';
     html += '.style-badge{position:absolute;top:12px;right:12px;background:#0088c2;color:white;padding:0.25rem 0.75rem;border-radius:980px;font-size:0.6875rem;font-weight:600}';
     html += '.commodity-badge{position:absolute;top:12px;left:12px;background:rgba(30,58,95,0.9);color:white;padding:0.25rem 0.625rem;border-radius:6px;font-size:0.625rem;font-weight:500;text-transform:uppercase;letter-spacing:0.02em}';
+    html += '.gm-badge{position:absolute;bottom:12px;right:12px;padding:0.25rem 0.5rem;border-radius:6px;font-size:0.6875rem;font-weight:600}';
+    html += '.gm-badge.gm-high{background:rgba(52,199,89,0.9);color:white}.gm-badge.gm-mid{background:rgba(255,149,0,0.9);color:white}.gm-badge.gm-low{background:rgba(255,59,48,0.9);color:white}.gm-badge.gm-none{background:rgba(142,142,147,0.7);color:white}';
     html += '.style-info{padding:1rem 1.25rem}.style-number{font-size:0.6875rem;color:#86868b;text-transform:uppercase;letter-spacing:0.05em;font-weight:500}.style-name{font-size:0.9375rem;font-weight:600;margin:0.25rem 0;color:#1e3a5f;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
     html += '.style-stats{display:flex;justify-content:space-between;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid #f0f0f0}.style-stat{text-align:center}.style-stat-value{font-size:1rem;font-weight:600;color:#1e3a5f}.style-stat-value.money::before{content:"$"}.style-stat-label{font-size:0.625rem;color:#86868b;text-transform:uppercase;margin-top:0.125rem}';
     html += '.order-count{font-size:0.75rem;color:#86868b;margin-top:0.5rem}';
@@ -2153,6 +2158,7 @@ function getHTML() {
     html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'out += \'<div class="style-card" onclick="showStyleDetail(\\\'\'+ item.style_number +\'\\\')"><div class="style-image">\';';
     html += 'out += \'<span class="style-badge">\' + item.order_count + \' order\' + (item.order_count > 1 ? "s" : "") + \'</span>\';';
+    html += 'var gm = calcGM(item); out += \'<span class="gm-badge \' + gm.cls + \'">\' + gm.label + \'</span>\';';
     html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:3rem">👔</span>\';';
     html += 'out += \'</div><div class="style-info"><div class="style-number">\' + escapeHtml(item.style_number) + \'</div>\';';
@@ -2174,6 +2180,7 @@ function getHTML() {
     html += 'html += \'<div class="style-card" onclick="showStyleDetail(\\\'\'+ item.style_number +\'\\\')"><div class="style-image">\';';
     html += 'if (item.commodity) html += \'<span class="commodity-badge">\' + escapeHtml(item.commodity) + \'</span>\';';
     html += 'html += \'<span class="style-badge">\' + item.order_count + \' order\' + (item.order_count > 1 ? "s" : "") + \'</span>\';';
+    html += 'var gm = calcGM(item); html += \'<span class="gm-badge \' + gm.cls + \'">\' + gm.label + \'</span>\';';
     html += 'if (imgSrc) html += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
     html += 'else html += \'<span style="color:#ccc;font-size:3rem">👔</span>\';';
     html += 'html += \'</div><div class="style-info"><div class="style-number">\' + escapeHtml(item.style_number) + \'</div>\';';
@@ -2635,7 +2642,8 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
     html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \' <span style="color:#86868b;font-size:0.625rem">\' + orderCount + \' order\' + (orderCount !== 1 ? "s" : "") + \'</span></div>\';';
     html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
-    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'var gm = calcGM(item);';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span><span class="gm-badge \' + gm.cls + \'" style="position:static;margin-left:auto;font-size:0.6rem">\' + gm.label + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';'; // end dashboard-products
@@ -2977,6 +2985,7 @@ function getHTML() {
     // Helpers
     html += 'function formatNumber(n) { return n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","); }';
     html += 'function formatMoney(n) { n = n || 0; if (n >= 1000000) { var m = (n / 1000000).toFixed(1); if (m.endsWith(".0")) m = m.slice(0,-2); return "$" + m + "M"; } return "$" + formatNumber(Math.round(n)); }';
+    html += 'function calcGM(item) { var totalRev = 0, totalCost = 0; if (item.orders) { item.orders.forEach(function(o) { totalRev += o.total_amount || 0; totalCost += o.po_total || 0; }); } else { totalRev = item.total_dollars || 0; } if (totalRev <= 0 || totalCost <= 0) return { value: null, cls: "gm-none", label: "N/A" }; var gm = ((totalRev - totalCost) / totalRev) * 100; var cls = gm >= 40 ? "gm-high" : (gm >= 25 ? "gm-mid" : "gm-low"); return { value: gm, cls: cls, label: gm.toFixed(1) + "%" }; }';
     html += 'function escapeHtml(str) { if (!str) return ""; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'var monthNamesFull = ["January","February","March","April","May","June","July","August","September","October","November","December"];';
