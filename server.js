@@ -1402,6 +1402,7 @@ function getHTML() {
     // Header
     html += '.header{background:white;padding:0 2rem;height:56px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100}.header h1{font-size:1.125rem;font-weight:600;color:#1e3a5f;letter-spacing:-0.01em;display:flex;align-items:center;gap:0.5rem}.header h1 span{color:#0088c2}';
     html += '.header-right{display:flex;gap:1rem;align-items:center}';
+    html += '.mode-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px;margin-right:1rem}.mode-btn{padding:0.5rem 1rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}.mode-btn.active{background:#1e3a5f;color:white}';
 
     // Buttons
     html += '.btn{padding:0.625rem 1.25rem;border:none;border-radius:980px;cursor:pointer;font-size:0.875rem;font-weight:500;transition:all 0.2s;letter-spacing:-0.01em}.btn-primary{background:#1e3a5f;color:white}.btn-primary:hover{background:#2a4a6f}.btn-secondary{background:transparent;color:#0088c2;padding:0.5rem 1rem}.btn-secondary:hover{background:rgba(0,136,194,0.08)}.btn-success{background:#0088c2;color:white}.btn-success:hover{background:#007ab8}';
@@ -1569,7 +1570,8 @@ function getHTML() {
 
     // Header
     html += '<header class="header">';
-    html += '<h1><span>Open Orders</span> Dashboard</h1>';
+    html += '<div class="mode-toggle"><button class="mode-btn active" data-mode="sales" onclick="switchMode(\'sales\')">📦 Sales Orders</button><button class="mode-btn" data-mode="po" onclick="switchMode(\'po\')">🚢 Import POs</button></div>';
+    html += '<h1><span id="dashboardTitle">Open Orders</span> Dashboard</h1>';
     html += '<div class="header-right">';
     html += '<button class="btn btn-secondary" onclick="showSettingsModal()">⚙️ Settings</button>';
     html += '<button class="btn btn-secondary" onclick="showUploadModal()">Import CSV</button>';
@@ -1643,7 +1645,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { filters: { year: "", fiscalYear: "", customers: [], month: "", commodity: "", status: "Open" }, view: "monthly", data: null };';
+    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "monthly", data: null };';
 
     // Load filters
     html += 'async function loadFilters() {';
@@ -1679,6 +1681,17 @@ function getHTML() {
     html += 'document.getElementById("content").innerHTML = \'<div class="loading"><div class="spinner"></div></div>\';';
     html += 'try {';
     html += 'var params = new URLSearchParams();';
+    html += 'if (state.mode === "po") {';
+    // PO mode
+    html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
+    html += 'params.append("status", state.filters.poStatus || "Open");';
+    html += 'var res = await fetch("/api/po/orders?" + params.toString());';
+    html += 'var data = await res.json();';
+    html += 'state.data = data;';
+    html += 'updateStatsPO(data.stats || {});';
+    html += 'renderPOContent(data);';
+    html += '} else {';
+    // Sales mode
     html += 'if (state.filters.year) params.append("year", state.filters.year);';
     html += 'if (state.filters.fiscalYear) params.append("fiscalYear", state.filters.fiscalYear);';
     html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join(","));';
@@ -1691,6 +1704,7 @@ function getHTML() {
     html += 'state.data = data;';
     html += 'updateStats(data.stats || {});';
     html += 'renderContent(data);';
+    html += '}';
     html += '} catch(e) { console.error("Error loading data:", e); document.getElementById("content").innerHTML = \'<div class="empty-state"><h3>Error loading data</h3><p>\' + e.message + \'</p></div>\'; }}';
 
     // Update stats
@@ -1700,6 +1714,50 @@ function getHTML() {
     html += 'document.getElementById("statStyles").textContent = formatNumber(stats.style_count || 0);';
     html += 'document.getElementById("statUnits").textContent = formatNumber(stats.total_qty || 0);';
     html += 'document.getElementById("statDollars").textContent = formatNumber(Math.round(stats.total_dollars || 0));}';
+
+    // Update stats for PO mode
+    html += 'function updateStatsPO(stats) {';
+    html += 'document.getElementById("statOrders").textContent = formatNumber(stats.po_count || 0);';
+    html += 'document.getElementById("statCustomers").textContent = formatNumber(stats.vendor_count || 0);';
+    html += 'document.getElementById("statStyles").textContent = formatNumber(stats.style_count || 0);';
+    html += 'document.getElementById("statUnits").textContent = formatNumber(stats.total_qty || 0);';
+    html += 'document.getElementById("statDollars").textContent = formatNumber(Math.round(stats.total_dollars || 0));}';
+
+    // Render PO content
+    html += 'function renderPOContent(data) {';
+    html += 'var container = document.getElementById("content");';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3><p>Import data with PO information to see results</p></div>\'; return; }';
+    // Group by vendor
+    html += 'var vendorGroups = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'var vendor = item.vendor_name || "Unknown";';
+    html += 'if (!vendorGroups[vendor]) vendorGroups[vendor] = { items: [], totalQty: 0, totalDollars: 0 };';
+    html += 'vendorGroups[vendor].items.push(item);';
+    html += 'vendorGroups[vendor].totalQty += item.po_quantity || 0;';
+    html += 'vendorGroups[vendor].totalDollars += item.po_total || 0;';
+    html += '});';
+    // Render
+    html += 'var out = \'<div class="month-groups">\';';
+    html += 'Object.keys(vendorGroups).sort().forEach(function(vendor) {';
+    html += 'var group = vendorGroups[vendor];';
+    html += 'out += \'<div class="month-section"><div class="month-header"><h2>\' + vendor + \'</h2><div class="month-stats"><span>\' + group.items.length + \' styles</span><span>\' + formatNumber(group.totalQty) + \' units</span><span class="money">$\' + formatNumber(Math.round(group.totalDollars)) + \'</span></div></div>\';';
+    html += 'out += \'<div class="styles-grid">\';';
+    html += 'group.items.forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'out += \'<div class="style-card"><div class="style-image"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\\'none\\\'"></div>\';';
+    html += 'out += \'<div class="style-info"><div class="style-name">\' + (item.style_name || item.style_number) + \'</div><div class="style-number">\' + item.style_number + \'</div>\';';
+    html += 'out += \'<div class="style-meta"><span class="commodity-tag">\' + (item.commodity || "-") + \'</span></div>\';';
+    html += 'out += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.po_quantity || 0) + \'</div><div class="style-stat-label">Units</div></div>\';';
+    html += 'out += \'<div class="style-stat"><div class="style-stat-value money">$\' + formatNumber(Math.round(item.po_total || 0)) + \'</div><div class="style-stat-label">Value</div></div>\';';
+    html += 'out += \'<div class="style-stat"><div class="style-stat-value">\' + (item.po_number || "-") + \'</div><div class="style-stat-label">PO#</div></div></div></div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div>\';';
+    html += 'container.innerHTML = out;';
+    html += '}';
 
     // Render content
     html += 'function renderContent(data) {';
@@ -2161,6 +2219,28 @@ function getHTML() {
     html += 'if (data.success) { document.getElementById("uploadStatus").textContent = "Success! Imported " + data.imported + " items."; setTimeout(function() { closeUploadModal(); loadFilters(); loadData(); }, 1500); }';
     html += 'else { document.getElementById("uploadStatus").textContent = "Error: " + data.error; }';
     html += '} catch(e) { document.getElementById("uploadStatus").textContent = "Error: " + e.message; }}';
+
+    // Mode switch function
+    html += 'function switchMode(mode) {';
+    html += 'if (state.mode === mode) return;';
+    html += 'state.mode = mode;';
+    html += 'document.querySelectorAll(".mode-btn").forEach(function(b) { b.classList.remove("active"); });';
+    html += 'document.querySelector(".mode-btn[data-mode=\'" + mode + "\']").classList.add("active");';
+    html += 'if (mode === "po") {';
+    html += 'document.getElementById("dashboardTitle").textContent = "Import POs";';
+    html += 'document.getElementById("statOrders").parentElement.querySelector(".stat-label").textContent = "Open POs";';
+    html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Vendors";';
+    html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
+    html += 'document.querySelectorAll(".status-btn")[1].textContent = "Received";';
+    html += '} else {';
+    html += 'document.getElementById("dashboardTitle").textContent = "Open Orders";';
+    html += 'document.getElementById("statOrders").parentElement.querySelector(".stat-label").textContent = "Open Orders";';
+    html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Customers";';
+    html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
+    html += 'document.querySelectorAll(".status-btn")[1].textContent = "Invoiced";';
+    html += '}';
+    html += 'loadData();';
+    html += '}';
 
     // Filter handlers
     html += 'document.getElementById("yearFilter").addEventListener("change", function(e) { state.filters.year = e.target.value; state.filters.fiscalYear = ""; document.getElementById("fiscalYearFilter").value = ""; document.getElementById("fiscalYearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
