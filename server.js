@@ -1003,51 +1003,107 @@ For months, accept formats like "June", "Jun 2025", "June 2025" and convert to Y
 // ============================================
 // IMAGE PROXY (for WorkDrive images)
 // ============================================
+
+// In-memory LRU cache for images (much faster than DB queries)
+var memoryCache = new Map();
+var MEMORY_CACHE_MAX = 200; // Keep last 200 images in memory
+var memoryCacheHits = 0;
+var memoryCacheMisses = 0;
+
+function addToMemoryCache(fileId, data, contentType) {
+    // Simple LRU: if at max, delete oldest entry
+    if (memoryCache.size >= MEMORY_CACHE_MAX) {
+        var oldestKey = memoryCache.keys().next().value;
+        memoryCache.delete(oldestKey);
+    }
+    memoryCache.set(fileId, { data: data, contentType: contentType, etag: '"' + fileId + '"' });
+}
+
 app.get('/api/image/:fileId', async function(req, res) {
     try {
         var fileId = req.params.fileId;
+        var etag = '"' + fileId + '"';
 
-        // Check database cache first (no Zoho API call needed)
+        // Check If-None-Match header (browser asking if cache is still valid)
+        if (req.headers['if-none-match'] === etag) {
+            return res.status(304).end(); // Not Modified - browser uses cached version
+        }
+
+        // 1. Check in-memory cache first (fastest)
+        if (memoryCache.has(fileId)) {
+            memoryCacheHits++;
+            var cached = memoryCache.get(fileId);
+            // Move to end (most recently used)
+            memoryCache.delete(fileId);
+            memoryCache.set(fileId, cached);
+
+            res.set('Content-Type', cached.contentType || 'image/jpeg');
+            res.set('Cache-Control', 'public, max-age=31536000, immutable');
+            res.set('ETag', etag);
+            return res.send(cached.data);
+        }
+
+        memoryCacheMisses++;
+
+        // 2. Check database cache (slower but persistent)
         var cacheResult = await pool.query(
             'SELECT image_data, content_type FROM image_cache WHERE file_id = $1',
             [fileId]
         );
 
         if (cacheResult.rows.length > 0 && cacheResult.rows[0].image_data) {
-            // Return cached image from database - zero Zoho API calls
-            console.log('✓ Cache HIT:', fileId);
-            res.set('Content-Type', cacheResult.rows[0].content_type || 'image/jpeg');
-            res.set('Cache-Control', 'public, max-age=31536000');
-            return res.send(cacheResult.rows[0].image_data);
+            var imgData = cacheResult.rows[0].image_data;
+            var contentType = cacheResult.rows[0].content_type || 'image/jpeg';
+
+            // Add to memory cache for next time
+            addToMemoryCache(fileId, imgData, contentType);
+
+            res.set('Content-Type', contentType);
+            res.set('Cache-Control', 'public, max-age=31536000, immutable');
+            res.set('ETag', etag);
+            return res.send(imgData);
         }
 
-        // Cache miss - need to fetch from Zoho
-        console.log('○ Cache MISS, fetching from Zoho:', fileId);
-
-        // Fetch from Zoho using queue system with rate limiting and backoff
-        // This ensures we never exceed concurrency limits
+        // 3. Cache miss - need to fetch from Zoho
+        console.log('○ Full MISS, fetching from Zoho:', fileId);
         var result = await fetchZohoImage(fileId);
 
-        // Store in database for persistent caching (future requests = zero Zoho calls)
+        // Store in database
         try {
             await pool.query(
                 'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
                 [fileId, result.buffer, result.contentType]
             );
-            console.log('✓ Cached in Railway DB:', fileId, '(' + (result.buffer.length / 1024).toFixed(1) + ' KB)');
         } catch (cacheErr) {
-            console.log('✗ Cache FAILED:', fileId, cacheErr.message);
+            console.log('✗ DB Cache FAILED:', fileId, cacheErr.message);
         }
 
+        // Add to memory cache
+        addToMemoryCache(fileId, result.buffer, result.contentType);
+
         res.set('Content-Type', result.contentType);
-        res.set('Cache-Control', 'public, max-age=31536000');
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        res.set('ETag', etag);
         res.send(result.buffer);
 
     } catch (err) {
         console.error('Image fetch error for', req.params.fileId + ':', err.message);
-        // Return a placeholder instead of error so page doesn't break
         res.status(500).json({ error: err.message, fileId: req.params.fileId });
     }
+});
+
+// Endpoint to check cache stats
+app.get('/api/cache/stats', function(req, res) {
+    res.json({
+        memoryCache: {
+            size: memoryCache.size,
+            maxSize: MEMORY_CACHE_MAX,
+            hits: memoryCacheHits,
+            misses: memoryCacheMisses,
+            hitRate: memoryCacheHits + memoryCacheMisses > 0 ?
+                (memoryCacheHits / (memoryCacheHits + memoryCacheMisses) * 100).toFixed(1) + '%' : '0%'
+        }
+    });
 });
 
 // Background image pre-caching (runs in background, doesn't block)
