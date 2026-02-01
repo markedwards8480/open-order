@@ -1052,28 +1052,28 @@ app.get('/api/debug/totals', async function(req, res) {
         // Total records and value
         var totalResult = await pool.query(`
             SELECT COUNT(*) as total_records,
-                   SUM(total_price) as total_dollars,
-                   SUM(qty) as total_units
+                   SUM(total_amount) as total_dollars,
+                   SUM(quantity) as total_units
             FROM order_items
         `);
 
         // By status
         var statusResult = await pool.query(`
-            SELECT status, COUNT(*) as records, SUM(total_price) as dollars, SUM(qty) as units
+            SELECT status, COUNT(*) as records, SUM(total_amount) as dollars, SUM(quantity) as units
             FROM order_items
             GROUP BY status
         `);
 
         // FY2026 (June 2025 - May 2026)
         var fy2026Result = await pool.query(`
-            SELECT COUNT(*) as records, SUM(total_price) as dollars, SUM(qty) as units
+            SELECT COUNT(*) as records, SUM(total_amount) as dollars, SUM(quantity) as units
             FROM order_items
             WHERE delivery_date >= '2025-06-01' AND delivery_date < '2026-06-01'
         `);
 
         // By customer for FY2026
         var customerFY2026 = await pool.query(`
-            SELECT customer, COUNT(*) as records, SUM(total_price) as dollars, SUM(qty) as units
+            SELECT customer, COUNT(*) as records, SUM(total_amount) as dollars, SUM(quantity) as units
             FROM order_items
             WHERE delivery_date >= '2025-06-01' AND delivery_date < '2026-06-01'
             GROUP BY customer
@@ -1082,7 +1082,7 @@ app.get('/api/debug/totals', async function(req, res) {
 
         // Ross customers specifically
         var rossResult = await pool.query(`
-            SELECT customer, status, COUNT(*) as records, SUM(total_price) as dollars
+            SELECT customer, status, COUNT(*) as records, SUM(total_amount) as dollars
             FROM order_items
             WHERE (customer ILIKE '%ross%' OR customer ILIKE '%dd%')
             AND delivery_date >= '2025-06-01' AND delivery_date < '2026-06-01'
