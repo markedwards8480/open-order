@@ -1580,6 +1580,37 @@ function getHTML() {
     html += '.chart-wrapper{height:300px;position:relative}';
     html += '.export-btn{background:#0088c2;color:white;border:none;padding:0.625rem 1.25rem;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}.export-btn:hover{background:#006699}';
 
+    // Dashboard hybrid view
+    html += '.dashboard-layout{display:grid;grid-template-columns:380px 1fr;gap:1.5rem;align-items:start}';
+    html += '@media(max-width:1200px){.dashboard-layout{grid-template-columns:1fr}}';
+    html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem}';
+    html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
+    html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
+    html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:4px}';
+    html += '.treemap-item{padding:8px;color:white;border-radius:6px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-width:60px;flex-grow:1}';
+    html += '.treemap-item:hover{transform:scale(1.03);box-shadow:0 4px 12px rgba(0,0,0,0.15)}';
+    html += '.treemap-label{font-weight:600;font-size:0.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+    html += '.treemap-value{font-size:0.8125rem;opacity:0.9}';
+    html += '.treemap-pct{font-size:0.6875rem;opacity:0.7}';
+    html += '.dashboard-customers{display:flex;flex-direction:column;gap:6px}';
+    html += '.customer-bar{display:grid;grid-template-columns:1fr auto;gap:0.5rem;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer;position:relative;background:#f5f5f7}';
+    html += '.customer-bar:hover{background:#e8f4fc}';
+    html += '.customer-name{font-size:0.75rem;font-weight:500;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1}';
+    html += '.customer-bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;opacity:0.2}';
+    html += '.customer-value{font-size:0.75rem;font-weight:600;color:#0088c2;z-index:1}';
+    html += '.dashboard-products{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
+    html += '.dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.75rem}';
+    html += '.dashboard-style-card{background:#f9fafb;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s}';
+    html += '.dashboard-style-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}';
+    html += '.dashboard-style-img{height:120px;background:#f0f4f8;display:flex;align-items:center;justify-content:center}';
+    html += '.dashboard-style-img img{max-width:100%;max-height:100%;object-fit:contain}';
+    html += '.dashboard-style-info{padding:0.625rem}';
+    html += '.dashboard-style-name{font-size:0.75rem;font-weight:600;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+    html += '.dashboard-style-num{font-size:0.6875rem;color:#86868b}';
+    html += '.dashboard-style-comm{font-size:0.625rem;color:#0088c2;margin-top:2px}';
+    html += '.dashboard-style-stats{display:flex;justify-content:space-between;margin-top:4px;font-size:0.6875rem;color:#666}';
+    html += '.dashboard-style-stats .money{color:#34c759;font-weight:600}';
+
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
     html += '.summary-table{width:100%;border-collapse:collapse;font-size:0.8125rem}';
@@ -1694,7 +1725,7 @@ function getHTML() {
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
-    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="monthly">By Month</button><button class="view-btn" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
     html += '</div>';
 
     // Main content
@@ -1870,6 +1901,7 @@ function getHTML() {
     html += 'var container = document.getElementById("content");';
     html += 'try {';
     html += 'if (state.view === "monthly") { renderMonthlyView(container, data.items || []); }';
+    html += 'else if (state.view === "dashboard") { renderDashboardView(container, data.items || []); }';
     html += 'else if (state.view === "summary") { renderSummaryView(container, data.items || []); }';
     html += 'else if (state.view === "styles") { renderStylesView(container, data.items || []); }';
     html += 'else if (state.view === "topmovers") { renderTopMoversView(container, data.items || []); }';
@@ -2251,6 +2283,92 @@ function getHTML() {
     html += 'var commValues = commEntries.map(function(e) { return Math.round(e[1]); });';
     html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
     html += '}';
+
+    // Dashboard view - hybrid charts + products
+    html += 'function renderDashboardView(container, items) {';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No data for dashboard</h3><p>Import data to see the dashboard</p></div>\'; return; }';
+    // Build data for charts
+    html += 'var customerData = {}; var commodityData = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'var cust = o.customer || "Unknown";';
+    html += 'if (!customerData[cust]) customerData[cust] = 0;';
+    html += 'customerData[cust] += o.total_amount || 0;';
+    html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
+    html += 'commodityData[comm] += o.total_amount || 0;';
+    html += '}); });';
+    // Sort data
+    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b", "#c7d1d9", "#2d5a87", "#66b3d9", "#003d5c"];';
+    html += 'var commSorted = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
+    html += 'var total = commSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
+    // Sort items by value
+    html += 'var sortedItems = items.slice().sort(function(a,b) { return (b.total_dollars || 0) - (a.total_dollars || 0); });';
+    // Build HTML
+    html += 'var out = \'<div class="dashboard-layout">\';';
+    // Left column - charts
+    html += 'out += \'<div class="dashboard-charts">\';';
+    // Treemap
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-treemap">\';';
+    html += 'commSorted.forEach(function(entry, idx) {';
+    html += 'var comm = entry[0], value = entry[1];';
+    html += 'var pct = (value / total * 100);';
+    html += 'var size = Math.max(Math.sqrt(pct) * 20, 8);';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 15) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
+    html += 'out += \'<div class="treemap-value">$\' + (value/1000).toFixed(0) + \'K</div>\';';
+    html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    // Top customers
+    html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
+    html += 'var custSorted = Object.entries(customerData).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 8);';
+    html += 'var custTotal = custSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
+    html += 'custSorted.forEach(function(entry, idx) {';
+    html += 'var cust = entry[0], value = entry[1];';
+    html += 'var pct = (value / custTotal * 100).toFixed(1);';
+    html += 'out += \'<div class="customer-bar" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="customer-name">\' + cust + \'</div>\';';
+    html += 'out += \'<div class="customer-bar-fill" style="width:\' + pct + \'%;background:\' + colors[idx % colors.length] + \'"></div>\';';
+    html += 'out += \'<div class="customer-value">$\' + (value/1000).toFixed(0) + \'K</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';'; // end dashboard-charts
+    // Right column - top products
+    html += 'out += \'<div class="dashboard-products">\';';
+    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">🏆 Top Styles by Value</h3>\';';
+    html += 'out += \'<div class="dashboard-grid">\';';
+    html += 'sortedItems.slice(0, 15).forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'out += \'<div class="dashboard-style-card" onclick="openStyleModal(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'out += \'<div class="dashboard-style-img"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\x27none\\x27"></div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';'; // end dashboard-products
+    html += 'out += \'</div>\';'; // end dashboard-layout
+    html += 'container.innerHTML = out; }';
+
+    // Filter by commodity from dashboard
+    html += 'function filterByCommodity(comm) {';
+    html += 'document.getElementById("commodityFilter").value = comm;';
+    html += 'state.filters.commodity = comm;';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Filter by customer from dashboard
+    html += 'function filterByCustomer(cust) {';
+    html += 'var checkboxes = document.querySelectorAll("#customerDropdown input[type=checkbox]");';
+    html += 'checkboxes.forEach(function(cb) { cb.checked = cb.value === cust; });';
+    html += 'state.filters.customers = [cust];';
+    html += 'document.getElementById("customerDisplay").textContent = cust;';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
 
     // Multi-select functions
     html += 'function toggleMultiSelect(type) {';
