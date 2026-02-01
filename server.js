@@ -1038,8 +1038,10 @@ function parseCSVLine(line) {
 }
 
 function findColumn(headers, aliases) {
+    var headersLower = headers.map(function(h) { return h.toLowerCase().replace(/[^a-z0-9]/g, '_'); });
     for (var alias of aliases) {
-        var idx = headers.indexOf(alias);
+        var aliasLower = alias.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        var idx = headersLower.indexOf(aliasLower);
         if (idx !== -1) return idx;
     }
     return -1;
@@ -1817,8 +1819,8 @@ function getHTML() {
     html += '.style-image{height:200px;background:#f5f5f7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}.style-image img{max-width:90%;max-height:90%;object-fit:contain}';
     html += '.style-badge{position:absolute;top:12px;right:12px;background:#0088c2;color:white;padding:0.25rem 0.75rem;border-radius:980px;font-size:0.6875rem;font-weight:600}';
     html += '.commodity-badge{position:absolute;top:12px;left:12px;background:rgba(30,58,95,0.9);color:white;padding:0.25rem 0.625rem;border-radius:6px;font-size:0.625rem;font-weight:500;text-transform:uppercase;letter-spacing:0.02em}';
-    html += '.gm-badge{position:absolute;bottom:12px;right:12px;padding:0.25rem 0.5rem;border-radius:6px;font-size:0.6875rem;font-weight:600}';
-    html += '.gm-badge.gm-high{background:rgba(52,199,89,0.9);color:white}.gm-badge.gm-mid{background:rgba(255,149,0,0.9);color:white}.gm-badge.gm-low{background:rgba(255,59,48,0.9);color:white}.gm-badge.gm-none{background:rgba(142,142,147,0.7);color:white}';
+    html += '.gm-badge{position:absolute;bottom:12px;right:12px;padding:0.25rem 0.5rem;border-radius:6px;font-size:0.6875rem;font-weight:600;background:rgba(255,255,255,0.9)}';
+    html += '.gm-badge.gm-high{color:#34c759}.gm-badge.gm-mid{color:#ff9500}.gm-badge.gm-low{color:#ff3b30}.gm-badge.gm-none{color:#8e8e93}';
     html += '.style-info{padding:1rem 1.25rem}.style-number{font-size:0.6875rem;color:#86868b;text-transform:uppercase;letter-spacing:0.05em;font-weight:500}.style-name{font-size:0.9375rem;font-weight:600;margin:0.25rem 0;color:#1e3a5f;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
     html += '.style-stats{display:flex;justify-content:space-between;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid #f0f0f0}.style-stat{text-align:center}.style-stat-value{font-size:1rem;font-weight:600;color:#1e3a5f}.style-stat-value.money::before{content:"$"}.style-stat-label{font-size:0.625rem;color:#86868b;text-transform:uppercase;margin-top:0.125rem}';
     html += '.order-count{font-size:0.75rem;color:#86868b;margin-top:0.5rem}';
