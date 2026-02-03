@@ -32,6 +32,213 @@ const upload = multer({ storage: multer.memoryStorage() });
 var zohoAccessToken = null;
 
 // ============================================
+// ZOHO ANALYTICS CONFIGURATION
+// ============================================
+var ZOHO_ANALYTICS_ORG_ID = process.env.ZOHO_ANALYTICS_ORG_ID || 'markedwardsgroup';
+var ZOHO_ANALYTICS_WORKSPACE_ID = process.env.ZOHO_ANALYTICS_WORKSPACE_ID || '1746857000002490128';
+var ZOHO_ANALYTICS_VIEW_ID = process.env.ZOHO_ANALYTICS_VIEW_ID || '1746857000094557183';
+
+// Fetch data from Zoho Analytics
+async function fetchZohoAnalyticsData() {
+    if (!zohoAccessToken) {
+        var tokenResult = await refreshZohoToken();
+        if (!tokenResult.success) {
+            return { success: false, error: 'Failed to get Zoho token: ' + tokenResult.error };
+        }
+    }
+
+    try {
+        // Zoho Analytics API endpoint to export data
+        var apiUrl = 'https://analyticsapi.zoho.com/restapi/v2/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
+
+        console.log('Fetching from Zoho Analytics:', apiUrl);
+
+        var response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
+                'ZANALYTICS-ORGID': ZOHO_ANALYTICS_ORG_ID
+            }
+        });
+
+        // If token expired, refresh and retry
+        if (response.status === 401) {
+            console.log('Token expired, refreshing...');
+            await refreshZohoToken();
+            response = await fetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
+                    'ZANALYTICS-ORGID': ZOHO_ANALYTICS_ORG_ID
+                }
+            });
+        }
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('Zoho Analytics API error:', response.status, errorText);
+            return { success: false, error: 'API error: ' + response.status + ' - ' + errorText };
+        }
+
+        var data = await response.json();
+        console.log('Zoho Analytics response:', JSON.stringify(data).substring(0, 500));
+
+        return { success: true, data: data };
+    } catch (err) {
+        console.error('Error fetching Zoho Analytics:', err);
+        return { success: false, error: err.message };
+    }
+}
+
+// Process and import Zoho Analytics data
+async function syncFromZohoAnalytics() {
+    console.log('Starting Zoho Analytics sync...');
+
+    var result = await fetchZohoAnalyticsData();
+    if (!result.success) {
+        return result;
+    }
+
+    var data = result.data;
+    if (!data || !data.data || !Array.isArray(data.data)) {
+        return { success: false, error: 'Invalid data format from Zoho Analytics' };
+    }
+
+    var rows = data.data;
+    var columns = data.column_order || [];
+
+    console.log('Received ' + rows.length + ' rows with columns:', columns);
+
+    if (rows.length === 0) {
+        return { success: false, error: 'No data returned from Zoho Analytics' };
+    }
+
+    // Build column index map (case-insensitive)
+    var colMap = {};
+    columns.forEach(function(col, idx) {
+        colMap[col.toLowerCase().replace(/[^a-z0-9_]/g, '_')] = idx;
+    });
+
+    // Find columns using flexible matching
+    function findCol(possibleNames) {
+        for (var i = 0; i < possibleNames.length; i++) {
+            var name = possibleNames[i].toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            if (colMap[name] !== undefined) return colMap[name];
+        }
+        // Partial match
+        for (var i = 0; i < possibleNames.length; i++) {
+            var partial = possibleNames[i].toLowerCase();
+            for (var key in colMap) {
+                if (key.indexOf(partial) !== -1) return colMap[key];
+            }
+        }
+        return -1;
+    }
+
+    var mapping = {
+        so_number: findCol(['sales_order_number', 'so_number', 'so', 'sales_order', 'order_number']),
+        customer: findCol(['customer_name', 'customer', 'cust', 'buyer']),
+        style_number: findCol(['style_name', 'style_number', 'style', 'sku', 'item_number']),
+        style_name: findCol(['style_suffix', 'description', 'item_name', 'product_name']),
+        commodity: findCol(['commodity', 'copmmodity', 'category', 'product_type']),
+        color: findCol(['color', 'colour', 'color_name']),
+        quantity: findCol(['quantity', 'qty', 'units', 'order_qty']),
+        unit_price: findCol(['so_price_fcy', 'so_price_bcy', 'unit_price', 'price']),
+        total_amount: findCol(['total_fcy', 'total_bcy', 'total_amount', 'total', 'amount']),
+        delivery_date: findCol(['so_cancel_date', 'delivery_date', 'ship_date', 'due_date']),
+        status: findCol(['so_status', 'status', 'order_status']),
+        image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
+        po_number: findCol(['purchase_order_number', 'po_number', 'po']),
+        vendor_name: findCol(['vendor_name', 'vendor', 'supplier', 'factory']),
+        po_status: findCol(['po_status', 'purchase_status']),
+        po_quantity: findCol(['po_quantity', 'po_qty']),
+        po_unit_price: findCol(['po_price', 'po_unit_price', 'po_price_fcy']),
+        po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
+        po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date'])
+    };
+
+    console.log('Column mapping:', mapping);
+
+    if (mapping.so_number === -1 || mapping.customer === -1 || mapping.style_number === -1) {
+        return { success: false, error: 'Missing required columns. Found columns: ' + columns.join(', ') };
+    }
+
+    // Clear existing data
+    await pool.query('DELETE FROM order_items');
+    await pool.query('DELETE FROM sales_orders');
+    console.log('Cleared existing data');
+
+    var imported = 0;
+    var errors = [];
+
+    for (var i = 0; i < rows.length; i++) {
+        try {
+            var row = rows[i];
+            var getValue = function(idx) { return idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : ''; };
+            var getNumber = function(idx) {
+                var val = getValue(idx).replace(/[^0-9.-]/g, '');
+                return parseFloat(val) || 0;
+            };
+            var getDate = function(idx) {
+                var val = getValue(idx);
+                if (!val) return null;
+                var d = new Date(val);
+                return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+            };
+
+            var soNumber = getValue(mapping.so_number);
+            var customer = getValue(mapping.customer);
+            var styleNumber = getValue(mapping.style_number);
+
+            if (!soNumber || !customer || !styleNumber) continue;
+
+            var styleName = getValue(mapping.style_name) || styleNumber;
+            var commodity = getValue(mapping.commodity) || '';
+            var color = getValue(mapping.color) || '';
+            var quantity = getNumber(mapping.quantity);
+            var unitPrice = getNumber(mapping.unit_price);
+            var totalAmount = getNumber(mapping.total_amount) || (quantity * unitPrice);
+            var deliveryDate = getDate(mapping.delivery_date);
+            var status = getValue(mapping.status) || 'Open';
+            var imageUrl = getValue(mapping.image_url) || '';
+
+            // Normalize status
+            var statusLower = status.toLowerCase();
+            if (statusLower.includes('partial')) status = 'Partial';
+            else if (statusLower.includes('invoice') || statusLower.includes('shipped') || statusLower.includes('complete') || statusLower.includes('billed')) status = 'Invoiced';
+            else status = 'Open';
+
+            // PO data
+            var poNumber = getValue(mapping.po_number);
+            var vendorName = getValue(mapping.vendor_name);
+            var poStatus = getValue(mapping.po_status);
+            var poQuantity = getNumber(mapping.po_quantity);
+            var poUnitPrice = getNumber(mapping.po_unit_price);
+            var poTotal = getNumber(mapping.po_total);
+            var poWarehouseDate = getDate(mapping.po_warehouse_date);
+
+            // Insert into order_items
+            await pool.query(`
+                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
+
+            imported++;
+        } catch (err) {
+            errors.push('Row ' + i + ': ' + err.message);
+            if (errors.length > 10) break;
+        }
+    }
+
+    // Log import
+    await pool.query('INSERT INTO import_history (import_type, status, records_imported) VALUES ($1, $2, $3)',
+        ['zoho_analytics_sync', 'success', imported]);
+
+    console.log('Zoho Analytics sync complete: ' + imported + ' records imported');
+    return { success: true, imported: imported, errors: errors };
+}
+
+// ============================================
 // ZOHO IMAGE FETCHING - Simple direct approach
 // ============================================
 
@@ -850,6 +1057,104 @@ app.post('/api/settings', async function(req, res) {
         res.json({ success: true, key: key, value: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================
+// ZOHO ANALYTICS SYNC ENDPOINTS
+// ============================================
+
+// OAuth callback for Zoho Analytics
+app.get('/api/zoho/callback', async function(req, res) {
+    try {
+        var code = req.query.code;
+        if (!code) {
+            return res.status(400).send('Missing authorization code');
+        }
+
+        var clientId = process.env.ZOHO_CLIENT_ID;
+        var clientSecret = process.env.ZOHO_CLIENT_SECRET;
+        var redirectUri = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho/callback';
+
+        var params = new URLSearchParams();
+        params.append('code', code);
+        params.append('client_id', clientId);
+        params.append('client_secret', clientSecret);
+        params.append('redirect_uri', redirectUri);
+        params.append('grant_type', 'authorization_code');
+
+        var response = await fetch('https://accounts.zoho.com/oauth/v2/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+
+        var data = await response.json();
+        console.log('OAuth response:', data);
+
+        if (data.refresh_token) {
+            // Store the refresh token
+            await pool.query('INSERT INTO zoho_tokens (access_token, refresh_token, expires_at) VALUES ($1, $2, $3)',
+                [data.access_token, data.refresh_token, new Date(Date.now() + data.expires_in * 1000)]);
+            zohoAccessToken = data.access_token;
+            res.send('<h1>Success!</h1><p>Zoho connected. Refresh token: <code>' + data.refresh_token + '</code></p><p>Add this to your Railway environment variables as ZOHO_REFRESH_TOKEN</p><p><a href="/">Back to Dashboard</a></p>');
+        } else {
+            res.status(400).send('Failed to get refresh token: ' + JSON.stringify(data));
+        }
+    } catch (err) {
+        res.status(500).send('Error: ' + err.message);
+    }
+});
+
+// Initiate Zoho OAuth flow
+app.get('/api/zoho/connect', function(req, res) {
+    var clientId = process.env.ZOHO_CLIENT_ID;
+    var redirectUri = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho/callback';
+    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.READ';
+    var authUrl = 'https://accounts.zoho.com/oauth/v2/auth?scope=' + scope + '&client_id=' + clientId + '&response_type=code&access_type=offline&redirect_uri=' + encodeURIComponent(redirectUri) + '&prompt=consent';
+    res.redirect(authUrl);
+});
+
+// Test Zoho Analytics connection
+app.post('/api/zoho-analytics/test', async function(req, res) {
+    try {
+        var result = await fetchZohoAnalyticsData();
+        if (result.success) {
+            var rowCount = result.data && result.data.data ? result.data.data.length : 0;
+            var columns = result.data && result.data.column_order ? result.data.column_order : [];
+            res.json({ success: true, message: 'Connected! Found ' + rowCount + ' rows with columns: ' + columns.slice(0, 10).join(', ') + (columns.length > 10 ? '...' : '') });
+        } else {
+            res.json({ success: false, error: result.error });
+        }
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Sync data from Zoho Analytics
+app.post('/api/zoho-analytics/sync', async function(req, res) {
+    try {
+        var result = await syncFromZohoAnalytics();
+        res.json(result);
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Get Zoho Analytics status
+app.get('/api/zoho-analytics/status', async function(req, res) {
+    try {
+        var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
+        var lastSync = await pool.query("SELECT created_at, records_imported FROM import_history WHERE import_type = 'zoho_analytics_sync' ORDER BY created_at DESC LIMIT 1");
+        res.json({
+            configured: hasCredentials,
+            workspaceId: ZOHO_ANALYTICS_WORKSPACE_ID,
+            viewId: ZOHO_ANALYTICS_VIEW_ID,
+            lastSync: lastSync.rows.length > 0 ? lastSync.rows[0].created_at : null,
+            lastSyncRecords: lastSync.rows.length > 0 ? lastSync.rows[0].records_imported : null
+        });
+    } catch (err) {
+        res.json({ error: err.message });
     }
 });
 
@@ -1983,6 +2288,19 @@ function getHTML() {
     html += '<span id="preCacheStatus" style="font-size:0.8125rem;color:#86868b"></span>';
     html += '</div>';
     html += '</div>';
+    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
+    html += '<div>';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Zoho Analytics Sync</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Sync order data directly from Zoho Analytics instead of uploading CSV files.</p>';
+    html += '<div id="zohoStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
+    html += '<span id="zohoConnectionStatus">Checking connection...</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
+    html += '<button class="btn btn-secondary" onclick="connectZoho()" id="zohoConnectBtn" style="flex:1">Connect to Zoho</button>';
+    html += '<button class="btn btn-primary" onclick="syncFromZoho()" id="zohoSyncBtn" style="flex:1">Sync Now</button>';
+    html += '</div>';
+    html += '<div id="zohoSyncStatus" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
 
@@ -3010,6 +3328,7 @@ function getHTML() {
     html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
     html += 'if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear;';
     html += '});';
+    html += 'checkZohoStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
@@ -3059,6 +3378,50 @@ function getHTML() {
     html += 'else { status.textContent = "All images cached!"; }';
     html += '}';
     html += '} catch(e) { clearInterval(preCacheInterval); }';
+    html += '}';
+
+    // Zoho Analytics sync functions
+    html += 'async function checkZohoStatus() {';
+    html += 'var statusEl = document.getElementById("zohoConnectionStatus");';
+    html += 'var connectBtn = document.getElementById("zohoConnectBtn");';
+    html += 'var syncBtn = document.getElementById("zohoSyncBtn");';
+    html += 'try {';
+    html += 'var res = await fetch("/api/zoho-analytics/status");';
+    html += 'var data = await res.json();';
+    html += 'if (data.connected) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#34c759">Connected to Zoho Analytics</span>\';';
+    html += 'connectBtn.textContent = "Reconnect";';
+    html += 'syncBtn.disabled = false;';
+    html += 'if (data.lastSync) { document.getElementById("zohoSyncStatus").textContent = "Last sync: " + new Date(data.lastSync).toLocaleString(); }';
+    html += '} else {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">Not connected</span>\';';
+    html += 'connectBtn.textContent = "Connect to Zoho";';
+    html += 'syncBtn.disabled = true;';
+    html += '}';
+    html += '} catch(e) { statusEl.innerHTML = \'<span style="color:#ff3b30">Error checking status</span>\'; }';
+    html += '}';
+    html += 'function connectZoho() {';
+    html += 'window.open("/api/zoho/connect", "_blank", "width=600,height=700");';
+    html += '}';
+    html += 'var zohoSyncInterval = null;';
+    html += 'async function syncFromZoho() {';
+    html += 'var btn = document.getElementById("zohoSyncBtn");';
+    html += 'var status = document.getElementById("zohoSyncStatus");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "Syncing...";';
+    html += 'status.innerHTML = \'<span style="color:#007aff">Fetching data from Zoho Analytics...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/zoho-analytics/sync", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'status.innerHTML = \'<span style="color:#34c759">Synced \' + data.rowCount + " orders from Zoho!</span>";';
+    html += 'setTimeout(function() { location.reload(); }, 1500);';
+    html += '} else {';
+    html += 'status.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "Sync Now";';
+    html += '}';
+    html += '} catch(e) { status.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>"; btn.disabled = false; btn.textContent = "Sync Now"; }';
     html += '}';
 
     // File upload
