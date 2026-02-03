@@ -1563,25 +1563,41 @@ app.post('/api/chat', async function(req, res) {
         var commodities = commoditiesResult.rows.map(r => r.commodity);
         var months = monthsResult.rows.map(r => r.month);
 
-        var systemPrompt = `You are a helpful assistant for a sales order dashboard. You help sales reps find information about open orders.
+        var systemPrompt = `You are a helpful assistant for a sales order dashboard. You CAN and WILL filter the data and show results on screen.
 
-Available filters:
-- Customers: ${customers.join(', ')}
+IMPORTANT: You have the ABILITY to filter and display orders. When users ask questions, APPLY the filters and show results.
+
+Available data:
+- Customers: ${customers.slice(0, 20).join(', ')}${customers.length > 20 ? '...' : ''}
 - Commodities: ${commodities.join(', ')}
 - Delivery Months: ${months.join(', ')}
 
-When the user asks to see orders, extract the relevant filters and return them in a JSON block.
-Format your response as helpful text followed by a JSON block with filters:
+ALWAYS respond with a brief message AND a JSON block to apply filters. The filters will automatically update the dashboard.
 
-Example response:
-"Here are Burlington's denim orders for June 2025:
+Example - User asks "Show Ross orders":
+"Filtering to Ross Stores orders now.
 \`\`\`json
-{"customer": "Burlington", "commodity": "Denim", "month": "2025-06"}
+{"customer": "Ross Stores", "action": "filter"}
 \`\`\`"
 
-If no specific filters mentioned, explain what data is available.
-Match customer/commodity names flexibly (case-insensitive, partial matches OK).
-For months, accept formats like "June", "Jun 2025", "June 2025" and convert to YYYY-MM.`;
+Example - User asks "Which month has the most dresses?":
+"Filtering to show all Dress orders so you can see the monthly breakdown.
+\`\`\`json
+{"commodity": "Dress", "action": "filter"}
+\`\`\`"
+
+Example - User asks "Show Burlington's denim for June":
+"Here are Burlington's Denim orders for June 2025.
+\`\`\`json
+{"customer": "Burlington", "commodity": "Denim", "month": "2025-06", "action": "filter"}
+\`\`\`"
+
+RULES:
+1. ALWAYS include the JSON block - this triggers the actual filter
+2. Keep your text response SHORT (1-2 sentences max)
+3. Match names flexibly (case-insensitive, partial matches)
+4. Convert month names to YYYY-MM format
+5. If asked about analytics/comparisons, filter to relevant data so user can see it on the dashboard`;
 
         var response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -3085,12 +3101,12 @@ function getHTML() {
     html += 'if (!content) return;';
     html += 'if (!customerName) { content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">Select a customer to view their commodity breadth</div>\'; return; }';
     html += 'content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">Loading...</div>\';';
-    // Calculate from cached data
-    html += 'if (!cachedData || !cachedData.items) { content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">No data available</div>\'; return; }';
+    // Calculate from state.data (the cached order data)
+    html += 'if (!state.data || !state.data.items) { content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">No data available</div>\'; return; }';
     html += 'var allCommodities = new Set();';
     html += 'var custCommodities = {};';
     html += 'var custTotal = { units: 0, dollars: 0, styles: 0 };';
-    html += 'cachedData.items.forEach(function(item) {';
+    html += 'state.data.items.forEach(function(item) {';
     html += 'allCommodities.add(item.commodity || "Other");';
     html += 'item.orders.forEach(function(o) {';
     html += 'if (o.customer === customerName) {';
@@ -3722,9 +3738,32 @@ function getHTML() {
     html += '} catch(e) { document.getElementById("typing").remove(); messages.innerHTML += \'<div class="chat-message assistant">Sorry, something went wrong.</div>\'; }}';
 
     html += 'function applyFiltersFromChat(filters) {';
-    html += 'if (filters.customer) { filterByCustomer(filters.customer); return; }';
-    html += 'if (filters.commodity) { filterByCommodity(filters.commodity); return; }';
-    html += 'if (filters.month) { filterByMonth(filters.month); return; }';
+    html += 'console.log("Applying chat filters:", filters);';
+    // Apply all filters at once (not just one)
+    html += 'if (filters.customer) {';
+    html += 'document.querySelectorAll("#customerOptions input[type=checkbox]").forEach(function(cb) { cb.checked = cb.value === filters.customer; });';
+    html += 'state.filters.customers = [filters.customer];';
+    html += 'document.getElementById("customerDisplay").textContent = filters.customer;';
+    html += 'var custDisplay = document.querySelector("#customerMultiSelect .multi-select-display"); if(custDisplay) custDisplay.classList.add("active");';
+    html += '}';
+    html += 'if (filters.commodity) {';
+    html += 'document.querySelectorAll("#commodityOptions input[type=checkbox]").forEach(function(cb) { cb.checked = cb.value === filters.commodity; });';
+    html += 'state.filters.commodities = [filters.commodity];';
+    html += 'document.getElementById("commodityDisplay").textContent = filters.commodity;';
+    html += 'var commDisplay = document.querySelector("#commodityMultiSelect .multi-select-display"); if(commDisplay) commDisplay.classList.add("active");';
+    html += '}';
+    html += 'if (filters.month) {';
+    html += 'document.querySelectorAll("#monthOptions input[type=checkbox]").forEach(function(cb) { cb.checked = cb.value === filters.month; });';
+    html += 'state.filters.months = [filters.month];';
+    html += 'document.getElementById("monthDisplay").textContent = filters.month;';
+    html += 'var monthDisplay = document.querySelector("#monthMultiSelect .multi-select-display"); if(monthDisplay) monthDisplay.classList.add("active");';
+    html += '}';
+    // Switch to dashboard view if not already there
+    html += 'if (state.view !== "dashboard") {';
+    html += 'state.view = "dashboard";';
+    html += 'document.querySelectorAll(".view-btn").forEach(function(b) { b.classList.remove("active"); });';
+    html += 'var dashBtn = document.querySelector(".view-btn[data-view=\'dashboard\']"); if(dashBtn) dashBtn.classList.add("active");';
+    html += '}';
     html += 'updateClearButton(); loadData(); }';
 
     // Helpers
