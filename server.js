@@ -48,32 +48,22 @@ async function fetchZohoAnalyticsData() {
     }
 
     try {
-        // Step 1: Initiate bulk export job
-        var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
+        // Step 1: Initiate bulk export job - CONFIG in URL as query parameter
+        var config = JSON.stringify({ responseFormat: 'json' });
+        var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
 
         console.log('Initiating Zoho Analytics bulk export:', exportUrl);
 
-        // Build form body with URLSearchParams
-        var params = new URLSearchParams();
-        params.append('CONFIG', JSON.stringify({
-            responseFormat: 'json',
-            outputConfig: {
-                outputFormat: 'json'
-            }
-        }));
-
         var headers = {
-            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken
         };
         if (ZOHO_ANALYTICS_ORG_ID && /^\d+$/.test(ZOHO_ANALYTICS_ORG_ID)) {
             headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
         }
 
         var initResponse = await fetch(exportUrl, {
-            method: 'POST',
-            headers: headers,
-            body: params.toString()
+            method: 'GET',
+            headers: headers
         });
 
         // If token expired, refresh and retry
@@ -82,9 +72,8 @@ async function fetchZohoAnalyticsData() {
             await refreshZohoToken();
             headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
             initResponse = await fetch(exportUrl, {
-                method: 'POST',
-                headers: headers,
-                body: params.toString()
+                method: 'GET',
+                headers: headers
             });
         }
 
