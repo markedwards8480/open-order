@@ -1385,13 +1385,24 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
         if (colMap.customer === -1) return res.status(400).json({ error: 'Missing required column: Customer' });
         if (colMap.style_number === -1) return res.status(400).json({ error: 'Missing required column: Style Number' });
 
-        // Clear existing data (full refresh)
+        // Clear existing data (full refresh) - ALWAYS clear on new import
         var clearMode = req.body.clearMode || req.query.clearMode || 'replace';
+        console.log('Import clearMode:', clearMode);
+
+        // Count existing rows before clearing
+        var countBefore = await pool.query('SELECT COUNT(*) as cnt FROM order_items');
+        console.log('Rows BEFORE clear:', countBefore.rows[0].cnt);
+
         if (clearMode === 'replace') {
-            await pool.query('DELETE FROM order_items');
-            await pool.query('DELETE FROM sales_orders');
-            console.log('Cleared existing order data');
+            // Use TRUNCATE for faster, more reliable clearing
+            await pool.query('TRUNCATE TABLE order_items RESTART IDENTITY CASCADE');
+            await pool.query('TRUNCATE TABLE sales_orders RESTART IDENTITY CASCADE');
+            console.log('✓ TRUNCATED order_items and sales_orders tables');
         }
+
+        // Verify clear worked
+        var countAfter = await pool.query('SELECT COUNT(*) as cnt FROM order_items');
+        console.log('Rows AFTER clear:', countAfter.rows[0].cnt);
 
         var imported = 0;
         var errors = [];
@@ -1478,11 +1489,34 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
         await pool.query('INSERT INTO import_history (import_type, status, records_imported) VALUES ($1, $2, $3)',
             ['csv', 'success', imported]);
 
+        // Get validation stats for the response
+        var validationStats = await pool.query(`
+            SELECT
+                COUNT(*) as total_rows,
+                COUNT(*) FILTER (WHERE status = 'open' OR status = 'Open' OR status = 'partially_invoiced') as open_rows,
+                SUM(total_amount) as total_value,
+                SUM(total_amount) FILTER (WHERE status = 'open' OR status = 'Open' OR status = 'partially_invoiced') as open_value
+            FROM order_items
+        `);
+        var stats = validationStats.rows[0];
+
+        console.log('=== IMPORT VALIDATION ===');
+        console.log('Total rows imported:', stats.total_rows);
+        console.log('Open rows:', stats.open_rows);
+        console.log('Total value: $' + (parseFloat(stats.total_value) || 0).toLocaleString());
+        console.log('Open value: $' + (parseFloat(stats.open_value) || 0).toLocaleString());
+
         res.json({
             success: true,
             imported: imported,
             errors: errors.slice(0, 10),
-            message: `Imported ${imported} line items`
+            message: `Imported ${imported} line items`,
+            validation: {
+                totalRows: parseInt(stats.total_rows),
+                openRows: parseInt(stats.open_rows),
+                totalValue: parseFloat(stats.total_value) || 0,
+                openValue: parseFloat(stats.open_value) || 0
+            }
         });
 
     } catch (err) {
