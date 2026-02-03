@@ -695,6 +695,18 @@ app.get('/api/orders', async function(req, res) {
         `;
         var commodityResult = await pool.query(commodityQuery, params);
 
+        // Get color breakdown (top 30 colors)
+        var colorQuery = `
+            SELECT color, SUM(total_amount) as total_dollars, SUM(quantity) as total_qty, COUNT(DISTINCT style_number) as style_count
+            FROM order_items
+            ${whereClause}
+            AND color IS NOT NULL AND color != ''
+            GROUP BY color
+            ORDER BY SUM(total_amount) DESC
+            LIMIT 30
+        `;
+        var colorResult = await pool.query(colorQuery, params);
+
         // Get full customer breakdown (no limit)
         var customerQuery = `
             SELECT customer, SUM(total_amount) as total_dollars, SUM(quantity) as total_qty
@@ -792,6 +804,7 @@ app.get('/api/orders', async function(req, res) {
             items: result.rows,
             stats: statsResult.rows[0],
             commodityBreakdown: commodityResult.rows,
+            colorBreakdown: colorResult.rows,
             customerBreakdown: customerResult.rows,
             monthlyBreakdown: monthlyResult.rows,
             monthlyByCommodity: monthlyByCommodityResult.rows,
@@ -2397,6 +2410,17 @@ function getHTML() {
     html += '.customer-select-row{display:flex;gap:1rem;align-items:center;margin-bottom:1.25rem}';
     html += '.customer-select-row label{font-weight:500;color:#1e3a5f}';
     html += '.customer-select-row select{padding:0.5rem 1rem;border:1px solid #ddd;border-radius:8px;font-size:0.875rem;min-width:280px}';
+    // Color ranking styles
+    html += '.color-ranking-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:0.75rem}';
+    html += '.color-rank-item{display:grid;grid-template-columns:32px 120px 1fr 70px 120px;align-items:center;gap:0.75rem;padding:0.75rem;background:#f8fafc;border-radius:8px;transition:all 0.2s}';
+    html += '.color-rank-item:hover{background:#e8f4fc;transform:translateX(2px)}';
+    html += '.color-rank-num{font-size:0.875rem;font-weight:700;color:#86868b;text-align:center}';
+    html += '.color-rank-name{font-size:0.875rem;font-weight:600;color:#1e3a5f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
+    html += '.color-rank-bar-wrap{background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden}';
+    html += '.color-rank-bar{height:100%;border-radius:4px;transition:width 0.3s}';
+    html += '.color-rank-value{font-size:0.875rem;font-weight:600;color:#0088c2;text-align:right}';
+    html += '.color-rank-meta{font-size:0.75rem;color:#86868b;text-align:right}';
+    html += '@media(max-width:768px){.color-rank-item{grid-template-columns:28px 1fr 60px;gap:0.5rem}.color-rank-bar-wrap,.color-rank-meta{display:none}}';
 
     html += '</style></head><body>';
 
@@ -3033,7 +3057,25 @@ function getHTML() {
     html += 'out += \'<div class="merch-section"><h3>📊 Commodities Ranked by Value</h3>\';';
     html += 'out += \'<div id="merchBarsContainer"></div></div>\';';
 
-    // Section 3: Customer Scorecard
+    // Section 3: Color Ranking (Top 25-30 colors)
+    html += 'var colors = data.colorBreakdown || [];';
+    html += 'var colorTotal = colors.reduce(function(a,c) { return a + (parseFloat(c.total_dollars)||0); }, 0);';
+    html += 'out += \'<div class="merch-section"><h3>🎨 Top Colors by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + colors.length + \' colors)</span></h3>\';';
+    html += 'out += \'<div class="color-ranking-grid">\';';
+    html += 'colors.forEach(function(c, idx) {';
+    html += 'var pct = colorTotal > 0 ? (parseFloat(c.total_dollars)/colorTotal*100) : 0;';
+    html += 'var barWidth = Math.max(pct * 3, 5);'; // Scale for visual
+    html += 'out += \'<div class="color-rank-item">\';';
+    html += 'out += \'<div class="color-rank-num">\' + (idx + 1) + \'</div>\';';
+    html += 'out += \'<div class="color-rank-name">\' + (c.color || "Unknown") + \'</div>\';';
+    html += 'out += \'<div class="color-rank-bar-wrap"><div class="color-rank-bar" style="width:\' + barWidth + \'%;background:\' + merchColors[idx % merchColors.length] + \'"></div></div>\';';
+    html += 'out += \'<div class="color-rank-value">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K</div>\';';
+    html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units · \' + (c.style_count || 0) + \' styles</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+
+    // Section 4: Customer Scorecard
     html += 'out += \'<div class="merch-section"><h3>🎯 Customer Assortment Scorecard</h3>\';';
     html += 'out += \'<div class="customer-select-row"><label>Select Customer:</label><select id="scorecardCustomer" onchange="loadCustomerScorecard(this.value)"><option value="">— Choose a customer —</option>\';';
     html += 'customers.forEach(function(c) {';
