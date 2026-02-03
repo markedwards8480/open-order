@@ -1873,6 +1873,44 @@ function getHTML() {
     // Responsive
     html += '@media(max-width:768px){.header{padding:0.75rem 1rem;height:auto}.stats-bar{padding:1rem;gap:1.5rem}.stat-value{font-size:1.25rem}.filters-bar{padding:0.75rem 1rem}.filter-select{padding:0.4rem 1.5rem 0.4rem 0.75rem;font-size:0.8125rem}.main{padding:1rem}.product-grid{gap:0.75rem;grid-template-columns:repeat(2,1fr)}.style-card{border-radius:12px}.style-image{height:140px}.style-info{padding:0.75rem}.style-name{font-size:0.8125rem}.chat-panel{width:calc(100vw - 32px);right:16px;bottom:90px}.modal-body{flex-direction:column}}';
 
+    // Merchandising view styles
+    html += '.merch-container{display:flex;flex-direction:column;gap:1.5rem;padding:1rem}';
+    html += '.merch-section{background:#fff;border-radius:16px;padding:1.5rem;box-shadow:0 2px 8px rgba(0,0,0,0.06)}';
+    html += '.merch-section h3{margin:0 0 1rem;font-size:1.1rem;color:#1e3a5f;display:flex;align-items:center;gap:0.5rem}';
+    html += '.merch-row{display:flex;gap:2rem;flex-wrap:wrap}';
+    html += '.merch-chart-box{flex:1;min-width:300px}';
+    html += '.merch-donut-wrapper{position:relative;width:280px;height:280px;margin:0 auto}';
+    html += '.merch-donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}';
+    html += '.merch-donut-center .value{font-size:1.5rem;font-weight:700;color:#1e3a5f}';
+    html += '.merch-donut-center .label{font-size:0.75rem;color:#86868b}';
+    html += '.merch-legend{flex:1;min-width:280px;max-height:320px;overflow-y:auto}';
+    html += '.merch-legend-item{display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s}';
+    html += '.merch-legend-item:hover{background:#f5f5f7}';
+    html += '.merch-legend-color{width:14px;height:14px;border-radius:4px;flex-shrink:0}';
+    html += '.merch-legend-info{flex:1;min-width:0}';
+    html += '.merch-legend-name{font-size:0.875rem;font-weight:500;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+    html += '.merch-legend-stats{font-size:0.75rem;color:#86868b}';
+    html += '.merch-legend-badge{background:#fff3cd;color:#856404;font-size:0.65rem;padding:2px 6px;border-radius:4px;font-weight:600;margin-left:auto;flex-shrink:0}';
+    html += '.merch-bubble-area{width:100%;height:380px;position:relative;background:#fafafa;border-radius:8px}';
+    html += '.merch-controls{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}';
+    html += '.merch-radio-group{display:flex;gap:0.75rem;align-items:center}';
+    html += '.merch-radio-group label{display:flex;align-items:center;gap:0.35rem;font-size:0.8125rem;color:#4a5568;cursor:pointer}';
+    html += '.merch-radio-group input{accent-color:#0088c2}';
+    html += '.scorecard-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.25rem}';
+    html += '.scorecard-metric{background:#f5f5f7;border-radius:12px;padding:1rem;text-align:center}';
+    html += '.scorecard-metric .value{font-size:1.75rem;font-weight:700;color:#1e3a5f}';
+    html += '.scorecard-metric .label{font-size:0.75rem;color:#86868b;margin-top:0.25rem}';
+    html += '.scorecard-health{padding:0.6rem 1.25rem;border-radius:8px;font-weight:600;display:inline-block}';
+    html += '.scorecard-health.strong{background:#d4edda;color:#155724}';
+    html += '.scorecard-health.moderate{background:#fff3cd;color:#856404}';
+    html += '.scorecard-health.opportunity{background:#f8d7da;color:#721c24}';
+    html += '.scorecard-top-list{margin-top:1rem}';
+    html += '.scorecard-top-item{display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid #eee;font-size:0.875rem}';
+    html += '.scorecard-top-item:last-child{border-bottom:none}';
+    html += '.customer-select-row{display:flex;gap:1rem;align-items:center;margin-bottom:1.25rem}';
+    html += '.customer-select-row label{font-weight:500;color:#1e3a5f}';
+    html += '.customer-select-row select{padding:0.5rem 1rem;border:1px solid #ddd;border-radius:8px;font-size:0.875rem;min-width:280px}';
+
     html += '</style></head><body>';
 
     // Header
@@ -1904,7 +1942,7 @@ function getHTML() {
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
-    html += '<div class="view-toggle"><button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button></div>';
     html += '</div>';
 
     // Main content
@@ -2086,6 +2124,7 @@ function getHTML() {
     html += 'else if (state.view === "topmovers") { renderTopMoversView(container, data.items || []); }';
     html += 'else if (state.view === "opportunities") { renderOpportunitiesView(container, data.items || []); }';
     html += 'else if (state.view === "charts") { renderChartsView(container, data); }';
+    html += 'else if (state.view === "merchandising") { renderMerchandisingView(container, data); }';
     html += 'else { renderOrdersView(container, data.orders || []); }';
     html += '} catch(e) { console.error("Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
 
@@ -2474,6 +2513,187 @@ function getHTML() {
     html += 'var commLabels = commEntries.map(function(e) { return e[0]; });';
     html += 'var commValues = commEntries.map(function(e) { return Math.round(e[1]); });';
     html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
+    html += '}';
+
+    // Merchandising view
+    html += 'var merchBubbleMetric = "dollars";';
+    html += 'var merchColors = ["#0088c2","#34c759","#ff9500","#ff3b30","#af52de","#5ac8fa","#ffcc00","#ff2d55","#8e8e93","#5856d6","#ff6961","#77dd77","#aec6cf","#fdfd96","#1e3a5f"];';
+
+    html += 'function renderMerchandisingView(container, data) {';
+    html += 'var commodities = data.commodityBreakdown || [];';
+    html += 'var customers = data.customerBreakdown || [];';
+    html += 'var total = commodities.reduce(function(a,c) { return a + (parseFloat(c.total_dollars)||0); }, 0);';
+    html += 'var totalUnits = commodities.reduce(function(a,c) { return a + (parseInt(c.total_qty)||0); }, 0);';
+
+    // Build the HTML structure
+    html += 'var out = \'<div class="merch-container">\';';
+
+    // Section 1: Commodity Mix Balance
+    html += 'out += \'<div class="merch-section"><h3>📊 Commodity Mix Balance</h3><div class="merch-row">\';';
+    html += 'out += \'<div class="merch-chart-box"><div class="merch-donut-wrapper"><canvas id="merchDonut" width="280" height="280"></canvas><div class="merch-donut-center"><div class="value">$\' + (total/1000000).toFixed(1) + \'M</div><div class="label">Total Value</div></div></div></div>\';';
+    html += 'out += \'<div class="merch-legend">\';';
+    html += 'commodities.forEach(function(c, idx) {';
+    html += 'var pct = total > 0 ? (parseFloat(c.total_dollars)/total*100) : 0;';
+    html += 'var badge = pct > 20 ? \'<span class="merch-legend-badge">OVER-INDEXED</span>\' : "";';
+    html += 'out += \'<div class="merch-legend-item"><div class="merch-legend-color" style="background:\' + merchColors[idx % merchColors.length] + \'"></div><div class="merch-legend-info"><div class="merch-legend-name">\' + (c.commodity||"Other") + \'</div><div class="merch-legend-stats">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K (\' + pct.toFixed(1) + \'%) · \' + parseInt(c.total_qty).toLocaleString() + \' units</div></div>\' + badge + \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div></div>\';';
+
+    // Section 2: Bubble Chart
+    html += 'out += \'<div class="merch-section"><h3>📈 Volume vs Value by Commodity</h3>\';';
+    html += 'out += \'<div class="merch-controls"><div class="merch-radio-group"><span style="font-weight:500">Bubble Size:</span><label><input type="radio" name="merchBubble" value="dollars" checked onchange="updateMerchBubble(this.value)"> $ Value</label><label><input type="radio" name="merchBubble" value="units" onchange="updateMerchBubble(this.value)"> Units</label></div></div>\';';
+    html += 'out += \'<div class="merch-bubble-area"><canvas id="merchBubbleCanvas"></canvas></div></div>\';';
+
+    // Section 3: Customer Scorecard
+    html += 'out += \'<div class="merch-section"><h3>🎯 Customer Assortment Scorecard</h3>\';';
+    html += 'out += \'<div class="customer-select-row"><label>Select Customer:</label><select id="scorecardCustomer" onchange="loadCustomerScorecard(this.value)"><option value="">— Choose a customer —</option>\';';
+    html += 'customers.forEach(function(c) {';
+    html += 'out += \'<option value="\' + (c.customer||"").replace(/"/g, "&quot;") + \'">\' + (c.customer||"Unknown") + \' ($\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K)</option>\';';
+    html += '});';
+    html += 'out += \'</select></div>\';';
+    html += 'out += \'<div id="scorecardContent"><div style="text-align:center;padding:2rem;color:#86868b">Select a customer to view their commodity breadth</div></div></div>\';';
+
+    html += 'out += \'</div>\';';
+    html += 'container.innerHTML = out;';
+
+    // Render donut chart
+    html += 'setTimeout(function() { renderMerchDonut(commodities, total); renderMerchBubble(commodities); }, 100);';
+    html += '}';
+
+    // Render donut chart function
+    html += 'function renderMerchDonut(commodities, total) {';
+    html += 'var canvas = document.getElementById("merchDonut");';
+    html += 'if (!canvas) return;';
+    html += 'var ctx = canvas.getContext("2d");';
+    html += 'ctx.clearRect(0, 0, 280, 280);';
+    html += 'var cx = 140, cy = 140, outerR = 120, innerR = 70;';
+    html += 'var startAngle = -Math.PI / 2;';
+    html += 'commodities.forEach(function(c, idx) {';
+    html += 'var pct = (parseFloat(c.total_dollars) || 0) / total;';
+    html += 'if (pct === 0) return;';
+    html += 'var endAngle = startAngle + pct * 2 * Math.PI;';
+    html += 'ctx.beginPath();';
+    html += 'ctx.moveTo(cx + innerR * Math.cos(startAngle), cy + innerR * Math.sin(startAngle));';
+    html += 'ctx.arc(cx, cy, outerR, startAngle, endAngle);';
+    html += 'ctx.arc(cx, cy, innerR, endAngle, startAngle, true);';
+    html += 'ctx.closePath();';
+    html += 'ctx.fillStyle = merchColors[idx % merchColors.length];';
+    html += 'ctx.fill();';
+    html += 'startAngle = endAngle;';
+    html += '});';
+    html += '}';
+
+    // Render bubble chart function
+    html += 'function renderMerchBubble(commodities) {';
+    html += 'var canvas = document.getElementById("merchBubbleCanvas");';
+    html += 'if (!canvas) return;';
+    html += 'var container = canvas.parentElement;';
+    html += 'var w = container.clientWidth;';
+    html += 'var h = 380;';
+    html += 'canvas.width = w;';
+    html += 'canvas.height = h;';
+    html += 'var ctx = canvas.getContext("2d");';
+    html += 'ctx.clearRect(0, 0, w, h);';
+    html += 'var pad = { top: 40, right: 40, bottom: 50, left: 80 };';
+    html += 'var chartW = w - pad.left - pad.right;';
+    html += 'var chartH = h - pad.top - pad.bottom;';
+    // Draw axes
+    html += 'ctx.strokeStyle = "#e0e0e0";';
+    html += 'ctx.lineWidth = 1;';
+    html += 'ctx.beginPath();';
+    html += 'ctx.moveTo(pad.left, pad.top);';
+    html += 'ctx.lineTo(pad.left, h - pad.bottom);';
+    html += 'ctx.lineTo(w - pad.right, h - pad.bottom);';
+    html += 'ctx.stroke();';
+    // Calculate scales
+    html += 'var maxUnits = Math.max.apply(null, commodities.map(function(c) { return parseInt(c.total_qty) || 0; })) || 1;';
+    html += 'var maxDollars = Math.max.apply(null, commodities.map(function(c) { return parseFloat(c.total_dollars) || 0; })) || 1;';
+    // Labels
+    html += 'ctx.fillStyle = "#86868b";';
+    html += 'ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";';
+    html += 'ctx.textAlign = "center";';
+    html += 'ctx.fillText("Units", w / 2, h - 10);';
+    html += 'ctx.save();';
+    html += 'ctx.translate(15, h / 2);';
+    html += 'ctx.rotate(-Math.PI / 2);';
+    html += 'ctx.fillText("$ Value", 0, 0);';
+    html += 'ctx.restore();';
+    // Draw bubbles
+    html += 'commodities.forEach(function(c, idx) {';
+    html += 'var units = parseInt(c.total_qty) || 0;';
+    html += 'var dollars = parseFloat(c.total_dollars) || 0;';
+    html += 'var x = pad.left + (units / maxUnits) * chartW;';
+    html += 'var y = h - pad.bottom - (dollars / maxDollars) * chartH;';
+    html += 'var r = Math.max(10, Math.sqrt(merchBubbleMetric === "dollars" ? dollars / maxDollars : units / maxUnits) * 50);';
+    html += 'ctx.beginPath();';
+    html += 'ctx.arc(x, y, r, 0, 2 * Math.PI);';
+    html += 'ctx.fillStyle = merchColors[idx % merchColors.length] + "99";';
+    html += 'ctx.fill();';
+    html += 'ctx.strokeStyle = merchColors[idx % merchColors.length];';
+    html += 'ctx.lineWidth = 2;';
+    html += 'ctx.stroke();';
+    html += 'if (r > 18) {';
+    html += 'ctx.fillStyle = "#1e3a5f";';
+    html += 'ctx.font = "bold 9px -apple-system, BlinkMacSystemFont, sans-serif";';
+    html += 'ctx.textAlign = "center";';
+    html += 'ctx.textBaseline = "middle";';
+    html += 'ctx.fillText((c.commodity || "Other").substring(0, 10), x, y);';
+    html += '}';
+    html += '});';
+    html += '}';
+
+    // Update bubble metric
+    html += 'function updateMerchBubble(metric) {';
+    html += 'merchBubbleMetric = metric;';
+    html += 'if (cachedData && cachedData.commodityBreakdown) renderMerchBubble(cachedData.commodityBreakdown);';
+    html += '}';
+
+    // Load customer scorecard
+    html += 'function loadCustomerScorecard(customerName) {';
+    html += 'var content = document.getElementById("scorecardContent");';
+    html += 'if (!content) return;';
+    html += 'if (!customerName) { content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">Select a customer to view their commodity breadth</div>\'; return; }';
+    html += 'content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">Loading...</div>\';';
+    // Calculate from cached data
+    html += 'if (!cachedData || !cachedData.items) { content.innerHTML = \'<div style="text-align:center;padding:2rem;color:#86868b">No data available</div>\'; return; }';
+    html += 'var allCommodities = new Set();';
+    html += 'var custCommodities = {};';
+    html += 'var custTotal = { units: 0, dollars: 0, styles: 0 };';
+    html += 'cachedData.items.forEach(function(item) {';
+    html += 'allCommodities.add(item.commodity || "Other");';
+    html += 'item.orders.forEach(function(o) {';
+    html += 'if (o.customer === customerName) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'if (!custCommodities[comm]) custCommodities[comm] = { units: 0, dollars: 0 };';
+    html += 'custCommodities[comm].units += o.quantity || 0;';
+    html += 'custCommodities[comm].dollars += o.total_amount || 0;';
+    html += 'custTotal.units += o.quantity || 0;';
+    html += 'custTotal.dollars += o.total_amount || 0;';
+    html += '}';
+    html += '});';
+    html += '});';
+    html += 'var totalComms = allCommodities.size;';
+    html += 'var custCommCount = Object.keys(custCommodities).length;';
+    html += 'var breadth = totalComms > 0 ? Math.round((custCommCount / totalComms) * 100) : 0;';
+    html += 'var healthClass = breadth >= 50 ? "strong" : (breadth >= 25 ? "moderate" : "opportunity");';
+    html += 'var healthLabel = breadth >= 50 ? "Strong Breadth" : (breadth >= 25 ? "Moderate Breadth" : "Growth Opportunity");';
+    // Build scorecard HTML
+    html += 'var html = \'<div class="scorecard-grid">\';';
+    html += 'html += \'<div class="scorecard-metric"><div class="value">\' + custCommCount + \'/\' + totalComms + \'</div><div class="label">Commodities</div></div>\';';
+    html += 'html += \'<div class="scorecard-metric"><div class="value">\' + custTotal.units.toLocaleString() + \'</div><div class="label">Units</div></div>\';';
+    html += 'html += \'<div class="scorecard-metric"><div class="value">$\' + (custTotal.dollars/1000).toFixed(0) + \'K</div><div class="label">Total Value</div></div>\';';
+    html += 'html += \'</div>\';';
+    html += 'html += \'<div style="text-align:center;margin:1rem 0"><div class="scorecard-health \' + healthClass + \'">\' + breadth + \'% Breadth - \' + healthLabel + \'</div></div>\';';
+    // Top commodities
+    html += 'var sortedComms = Object.entries(custCommodities).sort(function(a,b) { return b[1].dollars - a[1].dollars; }).slice(0, 5);';
+    html += 'if (sortedComms.length > 0) {';
+    html += 'html += \'<div class="scorecard-top-list"><h4 style="margin:0 0 0.75rem;font-size:0.875rem;color:#1e3a5f">Top Commodities</h4>\';';
+    html += 'sortedComms.forEach(function(e) {';
+    html += 'html += \'<div class="scorecard-top-item"><span>\' + e[0] + \'</span><span>\' + e[1].units.toLocaleString() + \' units · $\' + (e[1].dollars/1000).toFixed(0) + \'K</span></div>\';';
+    html += '});';
+    html += 'html += \'</div>\';';
+    html += '}';
+    html += 'content.innerHTML = html;';
     html += '}';
 
     // Dashboard view - hybrid charts + products
