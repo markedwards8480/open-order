@@ -48,17 +48,24 @@ async function fetchZohoAnalyticsData() {
     }
 
     try {
-        // Step 1: Initiate bulk export job using multipart form data
+        // Step 1: Initiate bulk export job
         var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
 
         console.log('Initiating Zoho Analytics bulk export:', exportUrl);
 
-        var FormData = require('form-data');
-        var formData = new FormData();
-        formData.append('CONFIG', JSON.stringify({ responseFormat: 'json' }));
+        // Build form body with URLSearchParams
+        var params = new URLSearchParams();
+        params.append('CONFIG', JSON.stringify({
+            responseFormat: 'json',
+            outputConfig: {
+                outputFormat: 'json'
+            }
+        }));
 
-        var headers = formData.getHeaders();
-        headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
+        var headers = {
+            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        };
         if (ZOHO_ANALYTICS_ORG_ID && /^\d+$/.test(ZOHO_ANALYTICS_ORG_ID)) {
             headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
         }
@@ -66,7 +73,7 @@ async function fetchZohoAnalyticsData() {
         var initResponse = await fetch(exportUrl, {
             method: 'POST',
             headers: headers,
-            body: formData
+            body: params.toString()
         });
 
         // If token expired, refresh and retry
@@ -77,7 +84,7 @@ async function fetchZohoAnalyticsData() {
             initResponse = await fetch(exportUrl, {
                 method: 'POST',
                 headers: headers,
-                body: formData
+                body: params.toString()
             });
         }
 
