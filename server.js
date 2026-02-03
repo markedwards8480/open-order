@@ -49,28 +49,21 @@ async function fetchZohoAnalyticsData() {
 
     try {
         var headers = {
-            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
-            'Content-Type': 'application/json'
+            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken
         };
         if (ZOHO_ANALYTICS_ORG_ID && /^\d+$/.test(ZOHO_ANALYTICS_ORG_ID)) {
             headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
         }
 
-        // Step 1: Initiate bulk export job
-        var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
+        // Step 1: Initiate bulk export job with CONFIG as query parameter
+        var config = JSON.stringify({ responseFormat: 'json' });
+        var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
 
         console.log('Initiating Zoho Analytics bulk export:', exportUrl);
 
-        var configBody = JSON.stringify({
-            config: {
-                responseFormat: 'json'
-            }
-        });
-
         var initResponse = await fetch(exportUrl, {
             method: 'POST',
-            headers: headers,
-            body: configBody
+            headers: headers
         });
 
         // If token expired, refresh and retry
@@ -80,8 +73,7 @@ async function fetchZohoAnalyticsData() {
             headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
             initResponse = await fetch(exportUrl, {
                 method: 'POST',
-                headers: headers,
-                body: configBody
+                headers: headers
             });
         }
 
