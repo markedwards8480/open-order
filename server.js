@@ -64,9 +64,7 @@ async function fetchZohoAnalyticsData() {
 
         while (hasMore) {
             var config = JSON.stringify({
-                responseFormat: 'json',
-                recordCount: limit,
-                startIndex: offset
+                responseFormat: 'json'
             });
             var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
 
@@ -108,20 +106,9 @@ async function fetchZohoAnalyticsData() {
 
             if (data.data && data.data.length > 0) {
                 allRows = allRows.concat(data.data);
-                offset += data.data.length;
-                // If we got less than limit, we're done
-                if (data.data.length < limit) {
-                    hasMore = false;
-                }
-            } else {
-                hasMore = false;
             }
-
-            // Safety limit - don't fetch more than 100k rows
-            if (allRows.length >= 100000) {
-                console.log('Reached 100k row limit');
-                hasMore = false;
-            }
+            // No pagination available, exit after first fetch
+            hasMore = false;
         }
 
         console.log('Total rows fetched:', allRows.length);
