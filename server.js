@@ -55,69 +55,112 @@ async function fetchZohoAnalyticsData() {
             headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
         }
 
-        // Use regular export API with pagination to get all data
-        var allRows = [];
-        var columns = [];
-        var offset = 0;
-        var limit = 10000; // Fetch in batches
-        var hasMore = true;
+        // Use bulk async export API (required for large views)
+        var config = JSON.stringify({
+            outputConfig: {
+                outputFormat: 'JSON'
+            }
+        });
+        var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
 
-        while (hasMore) {
-            var config = JSON.stringify({
-                responseFormat: 'json'
+        console.log('Initiating bulk export from Zoho Analytics:', exportUrl);
+
+        var response = await fetch(exportUrl, {
+            method: 'GET',
+            headers: headers
+        });
+
+        // If token expired, refresh and retry
+        if (response.status === 401) {
+            console.log('Token expired, refreshing...');
+            await refreshZohoToken();
+            headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
+            response = await fetch(exportUrl, {
+                method: 'GET',
+                headers: headers
             });
-            var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
+        }
 
-            console.log('Fetching from Zoho Analytics, offset:', offset);
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('Zoho Analytics bulk export error:', response.status, errorText);
+            return { success: false, error: 'API error: ' + response.status + ' - ' + errorText };
+        }
 
-            var response = await fetch(exportUrl, {
+        var initData = await response.json();
+        console.log('Bulk export response:', JSON.stringify(initData).substring(0, 500));
+
+        // Check if we got data directly (small dataset) or a job ID (large dataset)
+        if (initData.data && Array.isArray(initData.data) && initData.column_order) {
+            // Direct response with data
+            console.log('Got direct data response with', initData.data.length, 'rows');
+            return { success: true, data: initData };
+        }
+
+        // Check for job-based response
+        var jobId = initData.data && initData.data.jobId;
+        if (!jobId) {
+            // Maybe the data is in a different format
+            if (initData.data) {
+                return { success: true, data: initData };
+            }
+            return { success: false, error: 'Unexpected response format: ' + JSON.stringify(initData).substring(0, 200) };
+        }
+
+        // Poll for job completion
+        console.log('Got job ID:', jobId, '- polling for completion');
+        var jobUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/jobs/' + jobId;
+        var maxAttempts = 60;
+        var pollInterval = 3000;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
+
+            var statusResponse = await fetch(jobUrl, {
                 method: 'GET',
                 headers: headers
             });
 
-            // If token expired, refresh and retry
-            if (response.status === 401) {
-                console.log('Token expired, refreshing...');
-                await refreshZohoToken();
-                headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
-                response = await fetch(exportUrl, {
-                    method: 'GET',
-                    headers: headers
-                });
+            if (!statusResponse.ok) {
+                console.log('Job status check failed, attempt', attempt);
+                continue;
             }
 
-            if (!response.ok) {
-                var errorText = await response.text();
-                console.error('Zoho Analytics API error:', response.status, errorText);
-                if (allRows.length > 0) {
-                    // Return what we have so far
-                    console.log('Returning partial data:', allRows.length, 'rows');
-                    break;
+            var statusData = await statusResponse.json();
+            console.log('Job status:', JSON.stringify(statusData).substring(0, 300));
+
+            var jobInfo = statusData.data || statusData;
+            var jobStatus = jobInfo.jobStatus;
+
+            if (jobStatus === 'JOB COMPLETED') {
+                // Download the exported data
+                var downloadUrl = jobInfo.downloadUrl;
+                if (downloadUrl) {
+                    console.log('Downloading from:', downloadUrl);
+                    var downloadResponse = await fetch(downloadUrl, {
+                        method: 'GET',
+                        headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                    });
+
+                    if (downloadResponse.ok) {
+                        var data = await downloadResponse.json();
+                        console.log('Downloaded', data.data ? data.data.length : 0, 'rows');
+                        return { success: true, data: data };
+                    }
                 }
-                return { success: false, error: 'API error: ' + response.status + ' - ' + errorText };
+                // No download URL, check if data is in the response
+                if (jobInfo.data) {
+                    return { success: true, data: jobInfo };
+                }
+                return { success: false, error: 'Job completed but no data available' };
+            } else if (jobStatus === 'JOB FAILED' || jobStatus === 'FAILED') {
+                return { success: false, error: 'Export job failed: ' + (jobInfo.errorMessage || 'Unknown error') };
             }
-
-            var data = await response.json();
-            console.log('Got response with', data.data ? data.data.length : 0, 'rows');
-
-            if (data.column_order && columns.length === 0) {
-                columns = data.column_order;
-            }
-
-            if (data.data && data.data.length > 0) {
-                allRows = allRows.concat(data.data);
-            }
-            // No pagination available, exit after first fetch
-            hasMore = false;
+            // Still in progress, continue polling
+            console.log('Job still in progress, attempt', attempt + 1);
         }
 
-        console.log('Total rows fetched:', allRows.length);
-
-        if (allRows.length === 0) {
-            return { success: false, error: 'No data returned from Zoho Analytics' };
-        }
-
-        return { success: true, data: { data: allRows, column_order: columns } };
+        return { success: false, error: 'Export job timed out after ' + maxAttempts + ' attempts' };
     } catch (err) {
         console.error('Error fetching Zoho Analytics:', err);
         return { success: false, error: err.message };
