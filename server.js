@@ -502,9 +502,13 @@ app.get('/api/orders', async function(req, res) {
         var customer = req.query.customer;
         var customers = req.query.customers; // comma-separated list for multi-select
         var commodity = req.query.commodity;
+        var commodities = req.query.commodities; // comma-separated list for multi-select
         var month = req.query.month; // Format: YYYY-MM
+        var months = req.query.months; // comma-separated list for multi-select
         var year = req.query.year; // Calendar year filter
+        var years = req.query.years; // comma-separated list for multi-select
         var fiscalYear = req.query.fiscalYear; // Fiscal year filter (June 1 - May 31)
+        var fiscalYears = req.query.fiscalYears; // comma-separated list for multi-select
         var status = req.query.status || 'Open';
         var style = req.query.style;
         var soNumber = req.query.so_number;
@@ -551,9 +555,25 @@ app.get('/api/orders', async function(req, res) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(commodity);
         }
+        // Multi-select commodities filter
+        if (commodities) {
+            var commodityList = commodities.split(',').map(c => c.trim()).filter(c => c);
+            if (commodityList.length > 0) {
+                conditions.push('commodity = ANY($' + paramIndex++ + ')');
+                params.push(commodityList);
+            }
+        }
         if (year) {
             conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
             params.push(parseInt(year));
+        }
+        // Multi-select years filter
+        if (years) {
+            var yearList = years.split(',').map(y => parseInt(y.trim())).filter(y => !isNaN(y));
+            if (yearList.length > 0) {
+                conditions.push("EXTRACT(YEAR FROM delivery_date) = ANY($" + paramIndex++ + ")");
+                params.push(yearList);
+            }
         }
         if (fiscalYear) {
             // Fiscal year runs June 1 to May 31
@@ -567,9 +587,29 @@ app.get('/api/orders', async function(req, res) {
             paramIndex += 2;
             console.log('FY Filter applied: FY' + fiscalYear + ' = ' + fyStart + ' to ' + fyEnd);
         }
+        // Multi-select fiscal years filter
+        if (fiscalYears) {
+            var fyList = fiscalYears.split(',').map(fy => parseInt(fy.trim())).filter(fy => !isNaN(fy));
+            if (fyList.length > 0) {
+                // Build OR conditions for each fiscal year range
+                var fyConditions = fyList.map(function(fy) {
+                    return "(delivery_date::date >= '" + (fy - 1) + "-06-01'::date AND delivery_date::date <= '" + fy + "-05-31'::date)";
+                });
+                conditions.push('(' + fyConditions.join(' OR ') + ')');
+                console.log('Multi-FY Filter applied:', fyList.join(', '));
+            }
+        }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
             params.push(month);
+        }
+        // Multi-select months filter
+        if (months) {
+            var monthList = months.split(',').map(m => m.trim()).filter(m => m);
+            if (monthList.length > 0) {
+                conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = ANY($" + paramIndex++ + ")");
+                params.push(monthList);
+            }
         }
         if (style) {
             conditions.push('style_number = $' + paramIndex++);
@@ -771,9 +811,13 @@ app.get('/api/orders/by-so', async function(req, res) {
         var customer = req.query.customer;
         var customers = req.query.customers;
         var commodity = req.query.commodity;
+        var commodities = req.query.commodities;
         var month = req.query.month;
+        var months = req.query.months;
         var year = req.query.year;
+        var years = req.query.years;
         var fiscalYear = req.query.fiscalYear;
+        var fiscalYears = req.query.fiscalYears;
         var status = req.query.status || 'Open';
 
         var conditions = [];
@@ -815,9 +859,25 @@ app.get('/api/orders/by-so', async function(req, res) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(commodity);
         }
+        // Multi-select commodities filter
+        if (commodities) {
+            var commodityList = commodities.split(',').map(c => c.trim()).filter(c => c);
+            if (commodityList.length > 0) {
+                conditions.push('commodity = ANY($' + paramIndex++ + ')');
+                params.push(commodityList);
+            }
+        }
         if (year) {
             conditions.push("EXTRACT(YEAR FROM delivery_date) = $" + paramIndex++);
             params.push(parseInt(year));
+        }
+        // Multi-select years filter
+        if (years) {
+            var yearList = years.split(',').map(y => parseInt(y.trim())).filter(y => !isNaN(y));
+            if (yearList.length > 0) {
+                conditions.push("EXTRACT(YEAR FROM delivery_date) = ANY($" + paramIndex++ + ")");
+                params.push(yearList);
+            }
         }
         if (fiscalYear) {
             var fyInt = parseInt(fiscalYear);
@@ -828,9 +888,27 @@ app.get('/api/orders/by-so', async function(req, res) {
             params.push(fyEnd);
             paramIndex += 2;
         }
+        // Multi-select fiscal years filter
+        if (fiscalYears) {
+            var fyList = fiscalYears.split(',').map(fy => parseInt(fy.trim())).filter(fy => !isNaN(fy));
+            if (fyList.length > 0) {
+                var fyConditions = fyList.map(function(fy) {
+                    return "(delivery_date::date >= '" + (fy - 1) + "-06-01'::date AND delivery_date::date <= '" + fy + "-05-31'::date)";
+                });
+                conditions.push('(' + fyConditions.join(' OR ') + ')');
+            }
+        }
         if (month) {
             conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = $" + paramIndex++);
             params.push(month);
+        }
+        // Multi-select months filter
+        if (months) {
+            var monthList = months.split(',').map(m => m.trim()).filter(m => m);
+            if (monthList.length > 0) {
+                conditions.push("TO_CHAR(delivery_date, 'YYYY-MM') = ANY($" + paramIndex++ + ")");
+                params.push(monthList);
+            }
         }
 
         var whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -986,10 +1064,18 @@ app.get('/api/po/orders', async function(req, res) {
             params.push(...vendors);
         }
 
-        // Commodity filter
+        // Commodity filter (single value for backward compatibility)
         if (req.query.commodity) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(req.query.commodity);
+        }
+        // Multi-select commodities filter
+        if (req.query.commodities) {
+            var commodityList = req.query.commodities.split(',').map(c => c.trim()).filter(c => c);
+            if (commodityList.length > 0) {
+                conditions.push('commodity = ANY($' + paramIndex++ + ')');
+                params.push(commodityList);
+            }
         }
 
         // PO Status filter (Open/Received)
@@ -2068,13 +2154,16 @@ function getHTML() {
     html += '.commodity-progress-fill{height:100%;background:#0088c2;border-radius:2px}';
 
     // Multi-select dropdown
-    html += '.multi-select{position:relative;min-width:180px}.multi-select-display{background:white;border:1px solid #d2d2d7;border-radius:8px;padding:0.5rem 0.75rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:0.875rem}.multi-select-display:hover{border-color:#0088c2}';
+    html += '.multi-select{position:relative;min-width:140px}.multi-select-display{background:white;border:1px solid #d2d2d7;border-radius:8px;padding:0.5rem 0.75rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:0.875rem}.multi-select-display:hover{border-color:#0088c2}.multi-select-display.active{border-color:#0088c2;background:#e8f4fc}';
     html += '.multi-select-arrow{font-size:0.625rem;color:#86868b;margin-left:0.5rem}';
-    html += '.multi-select-dropdown{position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #d2d2d7;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-height:300px;overflow-y:auto;display:none;z-index:100}';
+    html += '.multi-select-dropdown{position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #d2d2d7;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-height:350px;overflow-y:auto;display:none;z-index:100;min-width:200px}';
     html += '.multi-select-dropdown.open{display:block}';
-    html += '.multi-select-option{padding:0.5rem 0.75rem;cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-size:0.875rem}.multi-select-option:hover{background:#f5f5f7}';
+    html += '.multi-select-search{padding:0.5rem;border-bottom:1px solid #e0e0e0;position:sticky;top:0;background:white}';
+    html += '.multi-select-search input{width:100%;padding:0.5rem;border:1px solid #d2d2d7;border-radius:6px;font-size:0.8125rem;outline:none}.multi-select-search input:focus{border-color:#0088c2}';
+    html += '.multi-select-options{max-height:250px;overflow-y:auto}';
+    html += '.multi-select-option{padding:0.5rem 0.75rem;cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-size:0.875rem}.multi-select-option:hover{background:#f5f5f7}.multi-select-option.hidden{display:none}';
     html += '.multi-select-option input{margin:0}';
-    html += '.multi-select-actions{padding:0.5rem;border-top:1px solid #e0e0e0;display:flex;gap:0.5rem}.multi-select-actions button{flex:1;padding:0.375rem;font-size:0.75rem;border:none;border-radius:4px;cursor:pointer}.multi-select-actions .select-all{background:#e8f4fc;color:#0088c2}.multi-select-actions .clear-all{background:#f5f5f7;color:#86868b}';
+    html += '.multi-select-actions{padding:0.5rem;border-bottom:1px solid #e0e0e0;display:flex;gap:0.5rem;position:sticky;top:41px;background:white}.multi-select-actions button{flex:1;padding:0.375rem;font-size:0.75rem;border:none;border-radius:4px;cursor:pointer}.multi-select-actions .select-all{background:#e8f4fc;color:#0088c2}.multi-select-actions .clear-all{background:#f5f5f7;color:#86868b}';
 
     // Charts
     html += '.charts-container{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:1.5rem}';
@@ -2316,11 +2405,11 @@ function getHTML() {
 
     // Filters bar
     html += '<div class="filters-bar">';
-    html += '<div class="filter-group"><label class="filter-label">Cal Year</label><select class="filter-select" id="yearFilter"></select></div>';
-    html += '<div class="filter-group"><label class="filter-label">Fiscal Year</label><select class="filter-select" id="fiscalYearFilter"></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Cal Year</label><div class="multi-select" id="yearMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'year\')"><span id="yearDisplay">All Years</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="yearDropdown"></div></div></div>';
+    html += '<div class="filter-group"><label class="filter-label">Fiscal Year</label><div class="multi-select" id="fyMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'fy\')"><span id="fyDisplay">All FY</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="fyDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Customer</label><div class="multi-select" id="customerMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'customer\')"><span id="customerDisplay">All Customers</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="customerDropdown"></div></div></div>';
-    html += '<div class="filter-group"><label class="filter-label">Delivery</label><select class="filter-select" id="monthFilter"><option value="">All Months</option></select></div>';
-    html += '<div class="filter-group"><label class="filter-label">Commodity</label><select class="filter-select" id="commodityFilter"><option value="">All Commodities</option></select></div>';
+    html += '<div class="filter-group"><label class="filter-label">Delivery</label><div class="multi-select" id="monthMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'month\')"><span id="monthDisplay">All Months</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="monthDropdown"></div></div></div>';
+    html += '<div class="filter-group"><label class="filter-label">Commodity</label><div class="multi-select" id="commodityMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'commodity\')"><span id="commodityDisplay">All Commodities</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="commodityDropdown"></div></div></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
@@ -2391,35 +2480,26 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { year: "", fiscalYear: "", customers: [], vendors: [], month: "", commodity: "", status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {} };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {} };';
 
     // Load filters
     html += 'async function loadFilters() {';
     html += 'try { var res = await fetch("/api/filters"); var data = await res.json();';
-    // Year filter
-    html += 'var yearSelect = document.getElementById("yearFilter");';
     html += 'var currentYear = new Date().getFullYear();';
+    // Cal Year multi-select
     html += 'data.years = data.years || [];';
     html += 'if (data.years.length === 0) { for(var y = currentYear; y >= currentYear - 3; y--) data.years.push(y); }';
-    html += 'var allOpt = document.createElement("option"); allOpt.value = ""; allOpt.textContent = "All Years"; allOpt.selected = true; yearSelect.appendChild(allOpt);';
-    html += 'data.years.forEach(function(y) { var opt = document.createElement("option"); opt.value = y; opt.textContent = y; yearSelect.appendChild(opt); });';
-    // Fiscal Year filter (June 1 - May 31)
-    html += 'var fySelect = document.getElementById("fiscalYearFilter");';
-    html += 'var fyAllOpt = document.createElement("option"); fyAllOpt.value = ""; fyAllOpt.textContent = "All FY"; fyAllOpt.selected = true; fySelect.appendChild(fyAllOpt);';
+    html += 'populateMultiSelect("year", data.years.map(function(y) { return { value: y, label: String(y) }; }), "All Years");';
+    // Fiscal Year multi-select
     html += 'data.fiscalYears = data.fiscalYears || [];';
     html += 'if (data.fiscalYears.length === 0) { for(var fy = currentYear + 1; fy >= currentYear - 3; fy--) data.fiscalYears.push(fy); }';
-    html += 'data.fiscalYears.forEach(function(fy) { var opt = document.createElement("option"); opt.value = fy; opt.textContent = "FY" + fy; fySelect.appendChild(opt); });';
-    html += 'if (state.filters.fiscalYear) { fySelect.value = state.filters.fiscalYear; fySelect.classList.add("active"); }';
+    html += 'populateMultiSelect("fy", data.fiscalYears.map(function(fy) { return { value: fy, label: "FY" + fy }; }), "All FY");';
     // Customer multi-select
-    html += 'var custDropdown = document.getElementById("customerDropdown");';
-    html += 'custDropdown.innerHTML = \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllCustomers()">Select All</button><button class="clear-all" onclick="clearAllCustomers()">Clear All</button></div>\';';
-    html += 'data.customers.forEach(function(c) { var div = document.createElement("div"); div.className = "multi-select-option"; div.innerHTML = \'<input type="checkbox" value="\' + c.customer + \'" onchange="updateCustomerFilter()"><span>\' + c.customer + \' (\' + c.order_count + \')</span>\'; custDropdown.appendChild(div); });';
-    // Month filter
-    html += 'var monthSelect = document.getElementById("monthFilter");';
-    html += 'data.months.forEach(function(m) { var opt = document.createElement("option"); opt.value = m.month; opt.textContent = m.display_name; monthSelect.appendChild(opt); });';
-    // Commodity filter
-    html += 'var commSelect = document.getElementById("commodityFilter");';
-    html += 'data.commodities.forEach(function(c) { var opt = document.createElement("option"); opt.value = c.commodity; opt.textContent = c.commodity + " (" + c.style_count + ")"; commSelect.appendChild(opt); });';
+    html += 'populateMultiSelect("customer", data.customers.map(function(c) { return { value: c.customer, label: c.customer + " (" + c.order_count + ")" }; }), "All Customers");';
+    // Month multi-select
+    html += 'populateMultiSelect("month", data.months.map(function(m) { return { value: m.month, label: m.display_name }; }), "All Months");';
+    // Commodity multi-select
+    html += 'populateMultiSelect("commodity", data.commodities.map(function(c) { return { value: c.commodity, label: c.commodity + " (" + c.style_count + ")" }; }), "All Commodities");';
     html += '} catch(e) { console.error("Error loading filters:", e); }}';
 
     // Load data
@@ -2429,7 +2509,7 @@ function getHTML() {
     html += 'var params = new URLSearchParams();';
     html += 'if (state.mode === "po") {';
     // PO mode
-    html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
+    html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
     html += 'params.append("status", state.filters.poStatus || "Open");';
     html += 'var res = await fetch("/api/po/orders?" + params.toString());';
     html += 'var data = await res.json();';
@@ -2437,12 +2517,12 @@ function getHTML() {
     html += 'updateStatsPO(data.stats || {});';
     html += 'renderPOContent(data);';
     html += '} else {';
-    // Sales mode
-    html += 'if (state.filters.year) params.append("year", state.filters.year);';
-    html += 'if (state.filters.fiscalYear) params.append("fiscalYear", state.filters.fiscalYear);';
+    // Sales mode - all filters now use arrays
+    html += 'if (state.filters.years.length > 0) params.append("years", state.filters.years.join(","));';
+    html += 'if (state.filters.fiscalYears.length > 0) params.append("fiscalYears", state.filters.fiscalYears.join(","));';
     html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join(","));';
-    html += 'if (state.filters.month) params.append("month", state.filters.month);';
-    html += 'if (state.filters.commodity) params.append("commodity", state.filters.commodity);';
+    html += 'if (state.filters.months.length > 0) params.append("months", state.filters.months.join(","));';
+    html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
     html += 'var url = state.view === "orders" ? "/api/orders/by-so?" : "/api/orders?";';
     html += 'var controller = new AbortController();';
@@ -2708,11 +2788,11 @@ function getHTML() {
     // Helper: Get filter context string for display
     html += 'function getFilterContext() {';
     html += 'var parts = [];';
-    html += 'if (state.filters.fiscalYear) parts.push("FY" + state.filters.fiscalYear);';
-    html += 'if (state.filters.year) parts.push(state.filters.year);';
-    html += 'if (state.filters.month) { var m = state.filters.month; var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p = m.split("-"); parts.push(monthNames[parseInt(p[1])-1] + " " + p[0]); }';
+    html += 'if (state.filters.fiscalYears.length > 0) parts.push(state.filters.fiscalYears.length === 1 ? "FY" + state.filters.fiscalYears[0] : state.filters.fiscalYears.length + " fiscal years");';
+    html += 'if (state.filters.years.length > 0) parts.push(state.filters.years.length === 1 ? state.filters.years[0] : state.filters.years.length + " years");';
+    html += 'if (state.filters.months.length > 0) { var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (state.filters.months.length === 1) { var m = state.filters.months[0]; var p = m.split("-"); parts.push(monthNames[parseInt(p[1])-1] + " " + p[0]); } else { parts.push(state.filters.months.length + " months"); } }';
     html += 'if (state.filters.customers.length > 0) parts.push(state.filters.customers.length === 1 ? state.filters.customers[0] : state.filters.customers.length + " customers");';
-    html += 'if (state.filters.commodity) parts.push(state.filters.commodity);';
+    html += 'if (state.filters.commodities.length > 0) parts.push(state.filters.commodities.length === 1 ? state.filters.commodities[0] : state.filters.commodities.length + " commodities");';
     html += 'if (state.filters.status && state.filters.status !== "All") parts.push(state.filters.status + " orders");';
     html += 'return parts.length > 0 ? parts.join(" · ") : "All Data";';
     html += '}';
@@ -3053,9 +3133,9 @@ function getHTML() {
     // Show clear buttons even when no data (so user can get back)
     html += 'if (items.length === 0) {';
     html += 'var emptyHtml = \'<div class="empty-state"><h3>No data found</h3><p>Try adjusting your filters</p>\';';
-    html += 'if (state.filters.commodity) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:1rem" onclick="clearCommodityFilter()">✕ Clear commodity: \' + state.filters.commodity + \'</button>\';';
+    html += 'if (state.filters.commodities.length > 0) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:1rem" onclick="clearCommodityFilter()">✕ Clear commodities (\' + state.filters.commodities.length + \')</button>\';';
     html += 'if (state.filters.customers.length > 0) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:0.5rem" onclick="clearCustomerFilter()">✕ Clear customer: \' + state.filters.customers[0] + \'</button>\';';
-    html += 'if (state.filters.month) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:0.5rem" onclick="clearMonthFilter()">✕ Clear month filter</button>\';';
+    html += 'if (state.filters.months.length > 0) emptyHtml += \'<button class="filter-clear-btn" style="margin-top:0.5rem" onclick="clearMonthFilter()">✕ Clear month filter</button>\';';
     html += 'emptyHtml += \'</div>\';';
     html += 'container.innerHTML = emptyHtml; return; }';
     // Use full breakdown data from API (not limited to 500 styles)
@@ -3101,13 +3181,13 @@ function getHTML() {
     html += 'var parts = monthKey.split("-");';
     html += 'var monthName = months[parseInt(parts[1])-1];';
     html += 'var yearShort = parts[0].slice(2);';
-    html += 'var isActive = state.filters.month === monthKey;';
+    html += 'var isActive = state.filters.months.indexOf(monthKey) !== -1;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
     html += 'out += \'<div class="timeline-bar"><span class="bar-month">\' + monthName + \' \\x27\' + yearShort + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(data.dollars/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
-    html += 'if (state.filters.month) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕</button>\'; }';
+    html += 'if (state.filters.months.length > 0) { out += \'<button class="timeline-clear" onclick="clearMonthFilter()">✕</button>\'; }';
     html += 'out += \'</div>\';';
     // Main layout with collapsible sidebar
     html += 'var sidebarCollapsed = state.sidebarCollapsed || false;';
@@ -3117,7 +3197,7 @@ function getHTML() {
     // Left column - charts
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
     // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
-    html += 'if (!state.filters.month) {';
+    html += 'if (state.filters.months.length === 0) {';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     // Build stacked bars
     html += 'out += \'<div class="mini-stacked">\';';
@@ -3154,10 +3234,10 @@ function getHTML() {
     html += '});';
     html += 'out += \'</div>\';';
     html += 'out += \'</div>\';';
-    html += '}'; // End of if (!state.filters.month)
+    html += '}'; // End of if (state.filters.months.length === 0)
     // Treemap (compact version) - always show, with hide link when stacked bar is hidden
     html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span>\';';
-    html += 'if (state.filters.month) { out += \' <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
+    html += 'if (state.filters.months.length > 0) { out += \' <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
     html += 'out += \' <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
     html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
@@ -3169,7 +3249,7 @@ function getHTML() {
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
-    html += 'if (state.filters.commodity) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear: \' + state.filters.commodity + \'</button>\'; }';
+    html += 'if (state.filters.commodities.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear commodities (\' + state.filters.commodities.length + \')</button>\'; }';
     html += 'out += \'</div>\';';
     // Top customers (using full data from API)
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
@@ -3225,17 +3305,21 @@ function getHTML() {
 
     // Filter by commodity from dashboard
     html += 'function filterByCommodity(comm) {';
-    html += 'document.getElementById("commodityFilter").value = comm;';
-    html += 'state.filters.commodity = comm;';
+    // Set the multi-select to just this commodity
+    html += 'document.querySelectorAll("#commodityOptions input[type=checkbox]").forEach(function(cb) { cb.checked = cb.value === comm; });';
+    html += 'state.filters.commodities = [comm];';
+    html += 'document.getElementById("commodityDisplay").textContent = comm;';
+    html += 'document.querySelector("#commodityMultiSelect .multi-select-display").classList.add("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
     // Filter by customer from dashboard
     html += 'function filterByCustomer(cust) {';
-    html += 'var checkboxes = document.querySelectorAll("#customerDropdown input[type=checkbox]");';
+    html += 'var checkboxes = document.querySelectorAll("#customerOptions input[type=checkbox]");';
     html += 'checkboxes.forEach(function(cb) { cb.checked = cb.value === cust; });';
     html += 'state.filters.customers = [cust];';
     html += 'document.getElementById("customerDisplay").textContent = cust;';
+    html += 'document.querySelector("#customerMultiSelect .multi-select-display").classList.add("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
@@ -3248,56 +3332,99 @@ function getHTML() {
 
     // Filter by month from dashboard timeline
     html += 'function filterByMonth(monthKey) {';
-    html += 'document.getElementById("monthFilter").value = monthKey;';
-    html += 'state.filters.month = monthKey;';
+    // Set the multi-select to just this month
+    html += 'document.querySelectorAll("#monthOptions input[type=checkbox]").forEach(function(cb) { cb.checked = cb.value === monthKey; });';
+    html += 'state.filters.months = [monthKey];';
+    html += 'document.getElementById("monthDisplay").textContent = monthKey;';
+    html += 'document.querySelector("#monthMultiSelect .multi-select-display").classList.add("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
     // Clear month filter from dashboard
     html += 'function clearMonthFilter() {';
-    html += 'document.getElementById("monthFilter").value = "";';
-    html += 'state.filters.month = "";';
+    html += 'document.querySelectorAll("#monthOptions input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'state.filters.months = [];';
+    html += 'document.getElementById("monthDisplay").textContent = "All Months";';
+    html += 'document.querySelector("#monthMultiSelect .multi-select-display").classList.remove("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
     // Clear commodity filter from dashboard
     html += 'function clearCommodityFilter() {';
-    html += 'document.getElementById("commodityFilter").value = "";';
-    html += 'state.filters.commodity = "";';
+    html += 'document.querySelectorAll("#commodityOptions input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'state.filters.commodities = [];';
+    html += 'document.getElementById("commodityDisplay").textContent = "All Commodities";';
+    html += 'document.querySelector("#commodityMultiSelect .multi-select-display").classList.remove("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
     // Clear customer filter from dashboard
     html += 'function clearCustomerFilter() {';
-    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'document.querySelectorAll("#customerOptions input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
     html += 'state.filters.customers = [];';
     html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
+    html += 'document.querySelector("#customerMultiSelect .multi-select-display").classList.remove("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
-    // Multi-select functions
+    // Generic multi-select helper functions
+    html += 'function populateMultiSelect(type, items, defaultLabel) {';
+    html += 'var dropdown = document.getElementById(type + "Dropdown");';
+    html += 'dropdown.innerHTML = \'<div class="multi-select-search"><input type="text" placeholder="Search..." oninput="filterMultiSelectOptions(\\\'\' + type + \'\\\', this.value)"></div>\';';
+    html += 'dropdown.innerHTML += \'<div class="multi-select-actions"><button class="select-all" onclick="selectAllFilter(\\\'\' + type + \'\\\')">All</button><button class="clear-all" onclick="clearAllFilter(\\\'\' + type + \'\\\')">Clear</button></div>\';';
+    html += 'dropdown.innerHTML += \'<div class="multi-select-options" id="\' + type + \'Options"></div>\';';
+    html += 'var optionsContainer = document.getElementById(type + "Options");';
+    html += 'items.forEach(function(item) {';
+    html += 'var div = document.createElement("div");';
+    html += 'div.className = "multi-select-option";';
+    html += 'div.setAttribute("data-value", item.value);';
+    html += 'div.setAttribute("data-label", item.label.toLowerCase());';
+    html += 'div.innerHTML = \'<input type="checkbox" value="\' + item.value + \'" onchange="updateMultiFilter(\\\'\' + type + \'\\\', \\\'\' + defaultLabel + \'\\\')"><span>\' + item.label + \'</span>\';';
+    html += 'optionsContainer.appendChild(div);';
+    html += '}); }';
+
     html += 'function toggleMultiSelect(type) {';
     html += 'var dropdown = document.getElementById(type + "Dropdown");';
-    html += 'dropdown.classList.toggle("open");';
-    html += 'document.addEventListener("click", function closeDropdown(e) { if (!e.target.closest(".multi-select")) { dropdown.classList.remove("open"); document.removeEventListener("click", closeDropdown); } }); }';
+    html += 'var isOpen = dropdown.classList.contains("open");';
+    html += 'document.querySelectorAll(".multi-select-dropdown.open").forEach(function(d) { d.classList.remove("open"); });';
+    html += 'if (!isOpen) { dropdown.classList.add("open"); var searchInput = dropdown.querySelector("input[type=text]"); if (searchInput) searchInput.focus(); }';
+    html += 'setTimeout(function() { document.addEventListener("click", function closeDropdown(e) { if (!e.target.closest(".multi-select")) { dropdown.classList.remove("open"); document.removeEventListener("click", closeDropdown); } }); }, 10); }';
 
-    html += 'function updateCustomerFilter() {';
-    html += 'var checkboxes = document.querySelectorAll("#customerDropdown input[type=checkbox]:checked");';
-    html += 'state.filters.customers = Array.from(checkboxes).map(function(cb) { return cb.value; });';
-    html += 'var display = document.getElementById("customerDisplay");';
-    html += 'if (state.filters.customers.length === 0) display.textContent = "All Customers";';
-    html += 'else if (state.filters.customers.length === 1) display.textContent = state.filters.customers[0];';
-    html += 'else display.textContent = state.filters.customers.length + " selected";';
+    html += 'function filterMultiSelectOptions(type, query) {';
+    html += 'var options = document.querySelectorAll("#" + type + "Options .multi-select-option");';
+    html += 'var lowerQuery = query.toLowerCase();';
+    html += 'options.forEach(function(opt) {';
+    html += 'var label = opt.getAttribute("data-label") || "";';
+    html += 'opt.classList.toggle("hidden", lowerQuery && label.indexOf(lowerQuery) === -1);';
+    html += '}); }';
+
+    html += 'function updateMultiFilter(type, defaultLabel) {';
+    html += 'var checkboxes = document.querySelectorAll("#" + type + "Options input[type=checkbox]:checked");';
+    html += 'var values = Array.from(checkboxes).map(function(cb) { return cb.value; });';
+    html += 'var filterKey = type === "fy" ? "fiscalYears" : type === "year" ? "years" : type === "month" ? "months" : type === "commodity" ? "commodities" : type + "s";';
+    html += 'state.filters[filterKey] = values;';
+    html += 'var display = document.getElementById(type + "Display");';
+    html += 'var displayEl = document.querySelector("#" + type + "MultiSelect .multi-select-display");';
+    html += 'if (values.length === 0) { display.textContent = defaultLabel; if (displayEl) displayEl.classList.remove("active"); }';
+    html += 'else if (values.length === 1) { display.textContent = values[0]; if (displayEl) displayEl.classList.add("active"); }';
+    html += 'else { display.textContent = values.length + " selected"; if (displayEl) displayEl.classList.add("active"); }';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
-    html += 'function selectAllCustomers() {';
-    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = true; });';
-    html += 'updateCustomerFilter(); }';
+    html += 'function selectAllFilter(type) {';
+    html += 'document.querySelectorAll("#" + type + "Options input[type=checkbox]").forEach(function(cb) { if (!cb.closest(".multi-select-option").classList.contains("hidden")) cb.checked = true; });';
+    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
+    html += 'updateMultiFilter(type, defaultLabel); }';
 
-    html += 'function clearAllCustomers() {';
-    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
-    html += 'updateCustomerFilter(); }';
+    html += 'function clearAllFilter(type) {';
+    html += 'document.querySelectorAll("#" + type + "Options input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
+    html += 'updateMultiFilter(type, defaultLabel); }';
+
+    // Keep old customer functions for backward compatibility
+    html += 'function updateCustomerFilter() { updateMultiFilter("customer", "All Customers"); }';
+    html += 'function selectAllCustomers() { selectAllFilter("customer"); }';
+    html += 'function clearAllCustomers() { clearAllFilter("customer"); }';
 
     // Export to Excel
     html += 'function exportToExcel() {';
@@ -3381,8 +3508,9 @@ function getHTML() {
     html += 'document.getElementById("settingsModal").classList.add("active");';
     html += 'var select = document.getElementById("defaultFYSelect");';
     html += 'select.innerHTML = \'<option value="">No Default (show all)</option>\';';
-    html += 'var fySelect = document.getElementById("fiscalYearFilter");';
-    html += 'for (var i = 1; i < fySelect.options.length; i++) { var opt = fySelect.options[i]; select.innerHTML += \'<option value="\' + opt.value + \'">\' + opt.textContent + \'</option>\'; }';
+    // Populate default FY dropdown from fyOptions checkboxes
+    html += 'var fyOptions = document.querySelectorAll("#fyOptions input[type=checkbox]");';
+    html += 'fyOptions.forEach(function(cb) { select.innerHTML += \'<option value="\' + cb.value + \'">FY\' + cb.value + \'</option>\'; });';
     // Populate FY checkboxes from API (all fiscal years, not just filtered)
     html += 'var fyCheckboxes = document.getElementById("fyCheckboxes");';
     html += 'fyCheckboxes.innerHTML = "<span style=\\"color:#86868b;font-size:0.75rem\\">Loading...</span>";';
@@ -3545,11 +3673,8 @@ function getHTML() {
     html += 'loadData();';
     html += '}';
 
-    // Filter handlers
-    html += 'document.getElementById("yearFilter").addEventListener("change", function(e) { state.filters.year = e.target.value; state.filters.fiscalYear = ""; document.getElementById("fiscalYearFilter").value = ""; document.getElementById("fiscalYearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
-    html += 'document.getElementById("fiscalYearFilter").addEventListener("change", function(e) { state.filters.fiscalYear = e.target.value; state.filters.year = ""; document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active"); e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
-    html += 'document.getElementById("monthFilter").addEventListener("change", function(e) { state.filters.month = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
-    html += 'document.getElementById("commodityFilter").addEventListener("change", function(e) { state.filters.commodity = e.target.value; e.target.classList.toggle("active", !!e.target.value); updateClearButton(); loadData(); });';
+    // Filter handlers - multi-selects are handled by updateMultiFilter function
+    // Sort by filter
     html += 'document.getElementById("sortByFilter").addEventListener("change", function(e) { state.sortBy = e.target.value; if (state.data) renderContent(state.data); });';
 
     // Status toggle
@@ -3564,15 +3689,17 @@ function getHTML() {
 
     // Clear filters
     html += 'function clearFilters() {';
-    html += 'state.filters = { year: "", fiscalYear: "", customers: [], month: "", commodity: "", status: state.filters.status };';
-    html += 'document.getElementById("yearFilter").value = ""; document.getElementById("yearFilter").classList.remove("active");';
-    html += 'document.getElementById("fiscalYearFilter").value = ""; document.getElementById("fiscalYearFilter").classList.remove("active");';
-    html += 'document.querySelectorAll("#customerDropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
-    html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
-    html += 'document.getElementById("monthFilter").value = ""; document.getElementById("monthFilter").classList.remove("active");';
-    html += 'document.getElementById("commodityFilter").value = ""; document.getElementById("commodityFilter").classList.remove("active");';
+    html += 'state.filters = { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: state.filters.status, poStatus: state.filters.poStatus };';
+    // Clear all multi-select checkboxes and reset displays
+    html += '["year", "fy", "customer", "month", "commodity"].forEach(function(type) {';
+    html += 'document.querySelectorAll("#" + type + "Dropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
+    html += 'var display = document.getElementById(type + "Display");';
+    html += 'var displayEl = document.querySelector("#" + type + "MultiSelect .multi-select-display");';
+    html += 'if (display) display.textContent = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All Customers";';
+    html += 'if (displayEl) displayEl.classList.remove("active");';
+    html += '});';
     html += 'updateClearButton(); loadData(); }';
-    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.month || state.filters.commodity || state.filters.year || state.filters.fiscalYear;';
+    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0;';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
 
     // Chat
@@ -3595,10 +3722,10 @@ function getHTML() {
     html += '} catch(e) { document.getElementById("typing").remove(); messages.innerHTML += \'<div class="chat-message assistant">Sorry, something went wrong.</div>\'; }}';
 
     html += 'function applyFiltersFromChat(filters) {';
-    html += 'if (filters.customer) { state.filters.customer = filters.customer; document.getElementById("customerFilter").value = filters.customer; document.getElementById("customerFilter").classList.add("active"); }';
-    html += 'if (filters.commodity) { state.filters.commodity = filters.commodity; document.getElementById("commodityFilter").value = filters.commodity; document.getElementById("commodityFilter").classList.add("active"); }';
-    html += 'if (filters.month) { state.filters.month = filters.month; document.getElementById("monthFilter").value = filters.month; document.getElementById("monthFilter").classList.add("active"); }';
-    html += 'updateClearBtn(); loadData(); }';
+    html += 'if (filters.customer) { filterByCustomer(filters.customer); return; }';
+    html += 'if (filters.commodity) { filterByCommodity(filters.commodity); return; }';
+    html += 'if (filters.month) { filterByMonth(filters.month); return; }';
+    html += 'updateClearButton(); loadData(); }';
 
     // Helpers
     html += 'function formatNumber(n) { return n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","); }';
