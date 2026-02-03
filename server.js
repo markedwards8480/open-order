@@ -2516,7 +2516,6 @@ function getHTML() {
     html += '}';
 
     // Merchandising view
-    html += 'var merchBubbleMetric = "dollars";';
     html += 'var merchColors = ["#0088c2","#34c759","#ff9500","#ff3b30","#af52de","#5ac8fa","#ffcc00","#ff2d55","#8e8e93","#5856d6","#ff6961","#77dd77","#aec6cf","#fdfd96","#1e3a5f"];';
 
     html += 'function renderMerchandisingView(container, data) {';
@@ -2539,10 +2538,9 @@ function getHTML() {
     html += '});';
     html += 'out += \'</div></div></div>\';';
 
-    // Section 2: Bubble Chart
-    html += 'out += \'<div class="merch-section"><h3>📈 Volume vs Value by Commodity</h3>\';';
-    html += 'out += \'<div class="merch-controls"><div class="merch-radio-group"><span style="font-weight:500">Bubble Size:</span><label><input type="radio" name="merchBubble" value="dollars" checked onchange="updateMerchBubble(this.value)"> $ Value</label><label><input type="radio" name="merchBubble" value="units" onchange="updateMerchBubble(this.value)"> Units</label></div></div>\';';
-    html += 'out += \'<div class="merch-bubble-area"><canvas id="merchBubbleCanvas"></canvas></div></div>\';';
+    // Section 2: Horizontal Bar Chart
+    html += 'out += \'<div class="merch-section"><h3>📊 Commodities Ranked by Value</h3>\';';
+    html += 'out += \'<div id="merchBarsContainer"></div></div>\';';
 
     // Section 3: Customer Scorecard
     html += 'out += \'<div class="merch-section"><h3>🎯 Customer Assortment Scorecard</h3>\';';
@@ -2556,8 +2554,8 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'container.innerHTML = out;';
 
-    // Render donut chart
-    html += 'setTimeout(function() { renderMerchDonut(commodities, total); renderMerchBubble(commodities); }, 100);';
+    // Render charts
+    html += 'setTimeout(function() { renderMerchDonut(commodities, total); renderMerchBars(commodities, total); }, 100);';
     html += '}';
 
     // Render donut chart function
@@ -2583,69 +2581,27 @@ function getHTML() {
     html += '});';
     html += '}';
 
-    // Render bubble chart function
-    html += 'function renderMerchBubble(commodities) {';
-    html += 'var canvas = document.getElementById("merchBubbleCanvas");';
-    html += 'if (!canvas) return;';
-    html += 'var container = canvas.parentElement;';
-    html += 'var w = container.clientWidth;';
-    html += 'var h = 380;';
-    html += 'canvas.width = w;';
-    html += 'canvas.height = h;';
-    html += 'var ctx = canvas.getContext("2d");';
-    html += 'ctx.clearRect(0, 0, w, h);';
-    html += 'var pad = { top: 40, right: 40, bottom: 50, left: 80 };';
-    html += 'var chartW = w - pad.left - pad.right;';
-    html += 'var chartH = h - pad.top - pad.bottom;';
-    // Draw axes
-    html += 'ctx.strokeStyle = "#e0e0e0";';
-    html += 'ctx.lineWidth = 1;';
-    html += 'ctx.beginPath();';
-    html += 'ctx.moveTo(pad.left, pad.top);';
-    html += 'ctx.lineTo(pad.left, h - pad.bottom);';
-    html += 'ctx.lineTo(w - pad.right, h - pad.bottom);';
-    html += 'ctx.stroke();';
-    // Calculate scales
-    html += 'var maxUnits = Math.max.apply(null, commodities.map(function(c) { return parseInt(c.total_qty) || 0; })) || 1;';
+    // Render horizontal bar chart function
+    html += 'function renderMerchBars(commodities, total) {';
+    html += 'var container = document.getElementById("merchBarsContainer");';
+    html += 'if (!container) return;';
     html += 'var maxDollars = Math.max.apply(null, commodities.map(function(c) { return parseFloat(c.total_dollars) || 0; })) || 1;';
-    // Labels
-    html += 'ctx.fillStyle = "#86868b";';
-    html += 'ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";';
-    html += 'ctx.textAlign = "center";';
-    html += 'ctx.fillText("Units", w / 2, h - 10);';
-    html += 'ctx.save();';
-    html += 'ctx.translate(15, h / 2);';
-    html += 'ctx.rotate(-Math.PI / 2);';
-    html += 'ctx.fillText("$ Value", 0, 0);';
-    html += 'ctx.restore();';
-    // Draw bubbles
+    html += 'var html = "";';
     html += 'commodities.forEach(function(c, idx) {';
-    html += 'var units = parseInt(c.total_qty) || 0;';
     html += 'var dollars = parseFloat(c.total_dollars) || 0;';
-    html += 'var x = pad.left + (units / maxUnits) * chartW;';
-    html += 'var y = h - pad.bottom - (dollars / maxDollars) * chartH;';
-    html += 'var r = Math.max(10, Math.sqrt(merchBubbleMetric === "dollars" ? dollars / maxDollars : units / maxUnits) * 50);';
-    html += 'ctx.beginPath();';
-    html += 'ctx.arc(x, y, r, 0, 2 * Math.PI);';
-    html += 'ctx.fillStyle = merchColors[idx % merchColors.length] + "99";';
-    html += 'ctx.fill();';
-    html += 'ctx.strokeStyle = merchColors[idx % merchColors.length];';
-    html += 'ctx.lineWidth = 2;';
-    html += 'ctx.stroke();';
-    html += 'if (r > 18) {';
-    html += 'ctx.fillStyle = "#1e3a5f";';
-    html += 'ctx.font = "bold 9px -apple-system, BlinkMacSystemFont, sans-serif";';
-    html += 'ctx.textAlign = "center";';
-    html += 'ctx.textBaseline = "middle";';
-    html += 'ctx.fillText((c.commodity || "Other").substring(0, 10), x, y);';
-    html += '}';
+    html += 'var units = parseInt(c.total_qty) || 0;';
+    html += 'var pct = (dollars / maxDollars) * 100;';
+    html += 'var mixPct = total > 0 ? (dollars / total * 100).toFixed(1) : 0;';
+    html += 'html += \'<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem">\';';
+    html += 'html += \'<div style="width:100px;font-size:0.8125rem;font-weight:500;color:#1e3a5f;text-align:right;flex-shrink:0">\' + (c.commodity || "Other") + \'</div>\';';
+    html += 'html += \'<div style="flex:1;background:#f0f4f8;border-radius:6px;height:28px;position:relative;overflow:hidden">\';';
+    html += 'html += \'<div style="position:absolute;left:0;top:0;height:100%;width:\' + pct + \'%;background:\' + merchColors[idx % merchColors.length] + \';border-radius:6px;transition:width 0.3s"></div>\';';
+    html += 'html += \'<div style="position:absolute;left:0;top:0;height:100%;width:100%;display:flex;align-items:center;padding:0 0.75rem;justify-content:space-between">\';';
+    html += 'html += \'<span style="font-size:0.75rem;font-weight:600;color:\' + (pct > 40 ? \"#fff\" : \"#1e3a5f\") + \';z-index:1">$\' + (dollars/1000).toFixed(0) + \'K</span>\';';
+    html += 'html += \'<span style="font-size:0.7rem;color:#86868b;z-index:1">\' + units.toLocaleString() + \' units · \' + mixPct + \'%</span>\';';
+    html += 'html += \'</div></div></div>\';';
     html += '});';
-    html += '}';
-
-    // Update bubble metric
-    html += 'function updateMerchBubble(metric) {';
-    html += 'merchBubbleMetric = metric;';
-    html += 'if (cachedData && cachedData.commodityBreakdown) renderMerchBubble(cachedData.commodityBreakdown);';
+    html += 'container.innerHTML = html;';
     html += '}';
 
     // Load customer scorecard
