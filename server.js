@@ -50,22 +50,27 @@ async function fetchZohoAnalyticsData() {
     try {
         var headers = {
             'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Content-Type': 'application/json'
         };
         if (ZOHO_ANALYTICS_ORG_ID && /^\d+$/.test(ZOHO_ANALYTICS_ORG_ID)) {
             headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
         }
 
         // Step 1: Initiate bulk export job
-        var config = JSON.stringify({ responseFormat: 'json' });
         var exportUrl = 'https://analyticsapi.zoho.com/restapi/v2/bulk/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
 
         console.log('Initiating Zoho Analytics bulk export:', exportUrl);
 
+        var configBody = JSON.stringify({
+            config: {
+                responseFormat: 'json'
+            }
+        });
+
         var initResponse = await fetch(exportUrl, {
             method: 'POST',
             headers: headers,
-            body: 'CONFIG=' + encodeURIComponent(config)
+            body: configBody
         });
 
         // If token expired, refresh and retry
@@ -76,7 +81,7 @@ async function fetchZohoAnalyticsData() {
             initResponse = await fetch(exportUrl, {
                 method: 'POST',
                 headers: headers,
-                body: 'CONFIG=' + encodeURIComponent(config)
+                body: configBody
             });
         }
 
