@@ -49,16 +49,22 @@ async function fetchZohoAnalyticsData() {
 
     try {
         // Zoho Analytics API endpoint to export data
-        var apiUrl = 'https://analyticsapi.zoho.com/restapi/v2/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data';
+        var config = JSON.stringify({ responseFormat: 'json' });
+        var apiUrl = 'https://analyticsapi.zoho.com/restapi/v2/workspaces/' + ZOHO_ANALYTICS_WORKSPACE_ID + '/views/' + ZOHO_ANALYTICS_VIEW_ID + '/data?CONFIG=' + encodeURIComponent(config);
 
         console.log('Fetching from Zoho Analytics:', apiUrl);
 
+        var headers = {
+            'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken
+        };
+        // Only add org ID header if it looks like a numeric ID
+        if (ZOHO_ANALYTICS_ORG_ID && /^\d+$/.test(ZOHO_ANALYTICS_ORG_ID)) {
+            headers['ZANALYTICS-ORGID'] = ZOHO_ANALYTICS_ORG_ID;
+        }
+
         var response = await fetch(apiUrl, {
             method: 'GET',
-            headers: {
-                'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
-                'ZANALYTICS-ORGID': ZOHO_ANALYTICS_ORG_ID
-            }
+            headers: headers
         });
 
         // If token expired, refresh and retry
@@ -67,10 +73,7 @@ async function fetchZohoAnalyticsData() {
             await refreshZohoToken();
             response = await fetch(apiUrl, {
                 method: 'GET',
-                headers: {
-                    'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken,
-                    'ZANALYTICS-ORGID': ZOHO_ANALYTICS_ORG_ID
-                }
+                headers: headers
             });
         }
 
