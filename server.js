@@ -1147,7 +1147,7 @@ app.get('/api/zoho-analytics/status', async function(req, res) {
         var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
         var lastSync = await pool.query("SELECT created_at, records_imported FROM import_history WHERE import_type = 'zoho_analytics_sync' ORDER BY created_at DESC LIMIT 1");
         res.json({
-            configured: hasCredentials,
+            connected: hasCredentials,
             workspaceId: ZOHO_ANALYTICS_WORKSPACE_ID,
             viewId: ZOHO_ANALYTICS_VIEW_ID,
             lastSync: lastSync.rows.length > 0 ? lastSync.rows[0].created_at : null,
