@@ -3555,7 +3555,7 @@ function getHTML() {
     html += 'var total = Object.values(monthlyByComm[m] || {}).reduce(function(a,v) { return a+v; }, 0);';
     html += 'return total > 0 && m && m !== "9999-99" && m <= maxMonth;';
     html += '}).sort();';
-    html += 'var displayMonths = monthsWithData.slice(-12);';
+    html += 'var displayMonths = monthsWithData.slice(-8);';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     // Build stacked bars
