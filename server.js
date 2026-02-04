@@ -319,28 +319,49 @@ async function syncFromZohoAnalytics() {
 // ZOHO IMAGE FETCHING - Simple direct approach
 // ============================================
 
-// Simple image fetch from Zoho - no complex queuing, just direct fetch
+// Simple image fetch from Zoho - try standard API first, then CDN
 async function fetchZohoImage(fileId) {
     if (!zohoAccessToken) {
         await refreshZohoToken();
     }
 
-    // Use the SAME URL format as the CSV (download-accl.zoho.com)
-    var imageUrl = 'https://download-accl.zoho.com/v1/workdrive/download/' + fileId;
-    var response = await fetch(imageUrl, {
+    // Try standard WorkDrive API first (more reliable with OAuth)
+    var apiUrl = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+    var cdnUrl = 'https://download-accl.zoho.com/v1/workdrive/download/' + fileId;
+
+    var response = await fetch(apiUrl, {
         headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
     });
 
-    // If token expired, refresh and retry once
-    if (response.status === 401) {
-        await refreshZohoToken();
-        response = await fetch(imageUrl, {
+    var firstStatus = response.status;
+
+    // If API fails, try CDN URL
+    if (response.status === 401 || response.status === 404) {
+        response = await fetch(cdnUrl, {
             headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
         });
     }
 
+    var secondStatus = response.status;
+
+    // If still 401, refresh token and retry both
+    if (response.status === 401) {
+        var refreshResult = await refreshZohoToken(true);
+        if (!refreshResult.success) {
+            throw new Error('Image fetch failed: 401 (token refresh failed: ' + refreshResult.error + ')');
+        }
+        response = await fetch(apiUrl, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+        if (response.status === 401 || response.status === 404) {
+            response = await fetch(cdnUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
+    }
+
     if (!response.ok) {
-        throw new Error('Image fetch failed: ' + response.status);
+        throw new Error('Image fetch failed: ' + response.status + ' (api=' + firstStatus + ', cdn=' + secondStatus + ')');
     }
 
     var buffer = Buffer.from(await response.arrayBuffer());
