@@ -2335,12 +2335,17 @@ function getHTML() {
     html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem;transition:opacity 0.3s,width 0.3s;position:relative}';
     html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
     html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
-    // Mini stacked bar chart - scrollable
-    html += '.mini-stacked-wrapper{overflow-x:auto;overflow-y:hidden;padding-bottom:4px;scroll-behavior:smooth}';
-    html += '.mini-stacked-wrapper::-webkit-scrollbar{height:6px}';
-    html += '.mini-stacked-wrapper::-webkit-scrollbar-track{background:#f0f0f0;border-radius:3px}';
-    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}';
-    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb:hover{background:#aaa}';
+    // Mini stacked bar chart - scrollable with arrows
+    html += '.mini-stacked-container{position:relative}';
+    html += '.mini-stacked-wrapper{overflow-x:auto;overflow-y:hidden;padding-bottom:8px;scroll-behavior:smooth;margin:0 24px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar{height:8px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-track{background:#e0e0e0;border-radius:4px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb{background:#0088c2;border-radius:4px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb:hover{background:#006a99}';
+    html += '.mini-stacked-scroll-btn{position:absolute;top:50%;transform:translateY(-50%);width:20px;height:40px;background:#1e3a5f;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;z-index:5;display:flex;align-items:center;justify-content:center}';
+    html += '.mini-stacked-scroll-btn:hover{background:#0088c2}';
+    html += '.mini-stacked-scroll-btn.left{left:0}';
+    html += '.mini-stacked-scroll-btn.right{right:0}';
     html += '.mini-stacked{display:flex;gap:4px;align-items:flex-end;height:120px;min-width:max-content}';
     html += '.mini-stacked-bar{width:40px;min-width:40px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;transition:opacity 0.15s}';
     html += '.mini-stacked-bar:hover{opacity:0.85}';
@@ -3560,8 +3565,10 @@ function getHTML() {
     html += 'return total > 0 && m && m !== "9999-99";';
     html += '}).sort();';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
-    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(scroll to see all)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
-    // Build stacked bars in scrollable wrapper
+    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
+    // Build stacked bars in scrollable wrapper with arrow buttons
+    html += 'out += \'<div class="mini-stacked-container">\';';
+    html += 'out += \'<button class="mini-stacked-scroll-btn left" onclick="document.getElementById(\\x27stackedBarWrapper\\x27).scrollBy({left:-150,behavior:\\x27smooth\\x27})">◀</button>\';';
     html += 'out += \'<div class="mini-stacked-wrapper" id="stackedBarWrapper"><div class="mini-stacked">\';';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'displayMonths.forEach(function(monthKey) {';
@@ -3588,6 +3595,8 @@ function getHTML() {
     html += 'out += \'</div><div class="mini-stacked-label">\' + monthName + \'</div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';'; // Close mini-stacked and wrapper
+    html += 'out += \'<button class="mini-stacked-scroll-btn right" onclick="document.getElementById(\\x27stackedBarWrapper\\x27).scrollBy({left:150,behavior:\\x27smooth\\x27})">▶</button>\';';
+    html += 'out += \'</div>\';'; // Close container
     // Legend
     html += 'out += \'<div class="mini-stacked-legend">\';';
     html += 'topComms.slice(0,6).forEach(function(comm, idx) {';
