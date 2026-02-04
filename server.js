@@ -464,10 +464,10 @@ var lastTokenRefreshAttempt = 0;
 var tokenRefreshCooldown = 30000; // 30 second cooldown between refresh attempts
 var lastTokenRefreshError = null;
 
-async function refreshZohoToken() {
-    // Prevent hammering the token endpoint
+async function refreshZohoToken(forceRefresh) {
+    // Prevent hammering the token endpoint (unless force refresh)
     var now = Date.now();
-    if (now - lastTokenRefreshAttempt < tokenRefreshCooldown) {
+    if (!forceRefresh && now - lastTokenRefreshAttempt < tokenRefreshCooldown) {
         console.log('Token refresh on cooldown, skipping (last error: ' + lastTokenRefreshError + ')');
         return { success: false, error: lastTokenRefreshError || 'On cooldown' };
     }
@@ -1882,11 +1882,23 @@ async function preCacheImages() {
     }
 
     preCacheRunning = true;
-    preCacheProgress = { total: 0, done: 0, errors: 0, phase: 'discovering' };
+    preCacheProgress = { total: 0, done: 0, errors: 0, phase: 'refreshing token' };
     console.log('Starting background image pre-cache...');
 
     try {
-        // Efficient single query: extract file IDs and find uncached ones in one go
+        // Step 1: Force refresh the token before starting
+        console.log('Force refreshing Zoho token before pre-cache...');
+        var tokenResult = await refreshZohoToken(true); // Force refresh
+        if (!tokenResult.success) {
+            preCacheProgress.phase = 'token error: ' + (tokenResult.error || 'refresh failed');
+            console.log('Pre-cache aborted: could not refresh token - ' + tokenResult.error);
+            preCacheRunning = false;
+            return;
+        }
+        console.log('Token refreshed successfully, starting pre-cache...');
+
+        // Step 2: Find uncached images
+        preCacheProgress.phase = 'discovering';
         console.log('Finding uncached images...');
         var result = await pool.query(`
             WITH image_file_ids AS (
@@ -1906,42 +1918,68 @@ async function preCacheImages() {
         `);
 
         var uncached = result.rows.map(r => r.file_id);
-        preCacheProgress = { total: uncached.length, done: 0, errors: 0, phase: 'caching' };
+        preCacheProgress = { total: uncached.length, done: 0, errors: 0, consecutive401s: 0, phase: 'caching' };
         console.log('Found ' + uncached.length + ' images to pre-cache');
 
-        // Process in batches of 5 parallel requests
-        var batchSize = 5;
-        for (var i = 0; i < uncached.length; i += batchSize) {
-            var batch = uncached.slice(i, i + batchSize);
+        // Step 3: Process images ONE AT A TIME to avoid parallel 401 issues
+        for (var i = 0; i < uncached.length; i++) {
+            var fileId = uncached[i];
 
-            await Promise.all(batch.map(async function(fileId) {
-                try {
-                    var imgResult = await fetchZohoImage(fileId);
-                    await pool.query(
-                        'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
-                        [fileId, imgResult.buffer, imgResult.contentType]
-                    );
-                    preCacheProgress.done++;
-                    console.log('Pre-cached: ' + fileId + ' (' + preCacheProgress.done + '/' + preCacheProgress.total + ')');
-                } catch (err) {
-                    preCacheProgress.errors++;
-                    console.log('Pre-cache error: ' + fileId + ' - ' + err.message);
+            try {
+                var imgResult = await fetchZohoImage(fileId);
+                await pool.query(
+                    'INSERT INTO image_cache (file_id, image_data, content_type) VALUES ($1, $2, $3) ON CONFLICT (file_id) DO UPDATE SET image_data = $2, content_type = $3',
+                    [fileId, imgResult.buffer, imgResult.contentType]
+                );
+                preCacheProgress.done++;
+                preCacheProgress.consecutive401s = 0; // Reset on success
+
+                // Log progress every 50 images
+                if (preCacheProgress.done % 50 === 0) {
+                    console.log('Pre-cache progress: ' + preCacheProgress.done + '/' + preCacheProgress.total + ' (' + preCacheProgress.errors + ' errors)');
                 }
-            }));
+            } catch (err) {
+                preCacheProgress.errors++;
+                console.log('Pre-cache error: ' + fileId + ' - ' + err.message);
 
-            // Longer delay between batches to avoid Zoho rate limits
-            if (i + batchSize < uncached.length) {
-                await new Promise(r => setTimeout(r, 1000));
+                // Track consecutive 401 errors
+                if (err.message.includes('401')) {
+                    preCacheProgress.consecutive401s++;
+
+                    // If we get 5 consecutive 401s, try to refresh token once
+                    if (preCacheProgress.consecutive401s === 5) {
+                        console.log('5 consecutive 401 errors, attempting token refresh...');
+                        var refreshResult = await refreshZohoToken(true);
+                        if (!refreshResult.success) {
+                            preCacheProgress.phase = 'stopped: token invalid';
+                            console.log('Pre-cache stopped: token refresh failed after repeated 401s');
+                            break;
+                        }
+                        console.log('Token refreshed, continuing pre-cache...');
+                        preCacheProgress.consecutive401s = 0;
+                    }
+
+                    // If we still get 401s after refresh, stop
+                    if (preCacheProgress.consecutive401s >= 10) {
+                        preCacheProgress.phase = 'stopped: persistent 401 errors';
+                        console.log('Pre-cache stopped: too many consecutive 401 errors');
+                        break;
+                    }
+                } else {
+                    preCacheProgress.consecutive401s = 0; // Reset for non-401 errors
+                }
             }
 
-            // Log progress every 50 images
-            if (preCacheProgress.done > 0 && preCacheProgress.done % 50 === 0) {
-                console.log('Pre-cache progress: ' + preCacheProgress.done + '/' + preCacheProgress.total + ' (' + preCacheProgress.errors + ' errors)');
+            // Small delay between each image to avoid rate limits
+            if (i < uncached.length - 1) {
+                await new Promise(r => setTimeout(r, 200));
             }
         }
 
-        preCacheProgress.phase = 'complete';
-        console.log('Pre-cache complete! Done: ' + preCacheProgress.done + ', Errors: ' + preCacheProgress.errors);
+        if (!preCacheProgress.phase.startsWith('stopped')) {
+            preCacheProgress.phase = 'complete';
+        }
+        console.log('Pre-cache finished! Done: ' + preCacheProgress.done + ', Errors: ' + preCacheProgress.errors);
     } catch (err) {
         console.error('Pre-cache failed:', err.message);
         preCacheProgress.phase = 'error: ' + err.message;
@@ -3991,14 +4029,19 @@ function getHTML() {
     html += 'if (data.running) {';
     html += 'btn.textContent = "⏳ Caching...";';
     html += 'var phase = data.progress.phase || "working";';
-    html += 'if (phase === "discovering") { status.textContent = "Finding uncached images..."; }';
+    html += 'if (phase === "refreshing token") { status.textContent = "Refreshing Zoho token..."; }';
+    html += 'else if (phase === "discovering") { status.textContent = "Finding uncached images..."; }';
+    html += 'else if (phase.startsWith("token error")) { status.innerHTML = \'<span style="color:#ff3b30">\' + phase + \'</span>\'; }';
     html += 'else if (data.progress.total > 0) { status.textContent = data.progress.done + "/" + data.progress.total + " images (" + data.progress.errors + " errors)"; }';
     html += 'else { status.textContent = "Starting..."; }';
     html += '} else {';
     html += 'clearInterval(preCacheInterval);';
     html += 'btn.disabled = false;';
     html += 'btn.textContent = "🖼️ Pre-Cache Images";';
-    html += 'if (data.progress.total > 0) { status.innerHTML = \'<span style="color:#34c759">✓ Done! \' + data.progress.done + " cached</span>"; }';
+    html += 'var phase = data.progress.phase || "";';
+    html += 'if (phase.startsWith("stopped") || phase.startsWith("token error") || phase.startsWith("error")) {';
+    html += 'status.innerHTML = \'<span style="color:#ff3b30">⚠️ \' + phase + " (" + data.progress.done + " cached)</span>";';
+    html += '} else if (data.progress.total > 0) { status.innerHTML = \'<span style="color:#34c759">✓ Done! \' + data.progress.done + " cached</span>"; }';
     html += 'else { status.textContent = "All images cached!"; }';
     html += '}';
     html += '} catch(e) { clearInterval(preCacheInterval); }';
