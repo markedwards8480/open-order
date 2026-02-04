@@ -2990,7 +2990,7 @@ function getHTML() {
     html += 'var html = \'<button class="export-btn" onclick="exportToExcel()">📥 Export to Excel</button>\';';
     html += 'html += \'<div class="charts-container">\';';
     // Build chart data - monthly by commodity (for stacked bar)
-    html += 'var monthlyData = {}; var customerData = {}; var commodityData = {}; var stackedData = {};';
+    html += 'var monthlyData = {}; var customerData = {}; var commodityData = {}; var stackedData = {}; var colorData = {};';
     html += 'var allMonths = new Set(); var allCommodities = new Set();';
     html += 'items.forEach(function(item) {';
     html += 'var comm = item.commodity || "Other";';
@@ -3009,6 +3009,8 @@ function getHTML() {
     html += 'customerData[cust] += o.total_amount || 0;';
     html += 'if (!commodityData[comm]) commodityData[comm] = 0;';
     html += 'commodityData[comm] += o.total_amount || 0;';
+    html += 'var color = o.color || "";';
+    html += 'if (color) { if (!colorData[color]) colorData[color] = { dollars: 0, units: 0, styles: new Set() }; colorData[color].dollars += o.total_amount || 0; colorData[color].units += o.quantity || 0; colorData[color].styles.add(item.style_number); }';
     html += '}); });';
     // Sort months
     html += 'var sortedMonths = Array.from(allMonths).sort().filter(function(m) { return m !== "9999-99"; });';
@@ -3020,6 +3022,20 @@ function getHTML() {
     html += 'html += \'<div class="chart-card"><h3>👥 Top Customers</h3><div class="chart-wrapper"><canvas id="customerChart"></canvas></div></div>\';';
     // Commodity chart placeholder
     html += 'html += \'<div class="chart-card"><h3>📦 By Commodity</h3><div class="chart-wrapper"><canvas id="commodityChart"></canvas></div></div>\';';
+    // Top Colors by Value
+    html += 'var sortedColors = Object.entries(colorData).sort(function(a,b) { return b[1].dollars - a[1].dollars; });';
+    html += 'html += \'<div class="chart-card" style="grid-column:span 2"><h3>🎨 Top Colors by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + sortedColors.length + \' colors)</span></h3>\';';
+    html += 'html += \'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem;font-size:0.8125rem">\';';
+    html += 'sortedColors.slice(0, 30).forEach(function(entry, idx) {';
+    html += 'var color = entry[0]; var data = entry[1];';
+    html += 'var dollars = data.dollars >= 1000000 ? "$" + (data.dollars/1000000).toFixed(1) + "M" : "$" + Math.round(data.dollars/1000) + "K";';
+    html += 'html += \'<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem;background:#f5f5f7;border-radius:6px">\';';
+    html += 'html += \'<span style="color:#86868b;font-size:0.75rem;min-width:1.5rem">\' + (idx + 1) + \'</span>\';';
+    html += 'html += \'<span style="flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\' + color + \'</span>\';';
+    html += 'html += \'<span style="color:#0088c2;font-weight:600">\' + dollars + \'</span>\';';
+    html += 'html += \'<span style="color:#86868b;font-size:0.6875rem">\' + formatNumber(data.units) + \' · \' + data.styles.size + \'</span>\';';
+    html += 'html += \'</div>\'; });';
+    html += 'html += \'</div></div>\';';
     html += 'html += \'</div>\';';
     html += 'container.innerHTML = html;';
     // Render charts
