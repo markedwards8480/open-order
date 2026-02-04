@@ -460,14 +460,29 @@ async function initDB() {
 }
 
 // Zoho token refresh
+var lastTokenRefreshAttempt = 0;
+var tokenRefreshCooldown = 30000; // 30 second cooldown between refresh attempts
+var lastTokenRefreshError = null;
+
 async function refreshZohoToken() {
+    // Prevent hammering the token endpoint
+    var now = Date.now();
+    if (now - lastTokenRefreshAttempt < tokenRefreshCooldown) {
+        console.log('Token refresh on cooldown, skipping (last error: ' + lastTokenRefreshError + ')');
+        return { success: false, error: lastTokenRefreshError || 'On cooldown' };
+    }
+    lastTokenRefreshAttempt = now;
+
     try {
         var clientId = process.env.ZOHO_CLIENT_ID;
         var clientSecret = process.env.ZOHO_CLIENT_SECRET;
         var refreshToken = process.env.ZOHO_REFRESH_TOKEN;
         if (!clientId || !clientSecret || !refreshToken) {
-            return { success: false, error: 'Zoho credentials not configured' };
+            lastTokenRefreshError = 'Zoho credentials not configured';
+            console.log('Token refresh failed: credentials not configured');
+            return { success: false, error: lastTokenRefreshError };
         }
+        console.log('Attempting Zoho token refresh...');
         var params = new URLSearchParams();
         params.append('refresh_token', refreshToken);
         params.append('client_id', clientId);
@@ -481,13 +496,19 @@ async function refreshZohoToken() {
         var data = await response.json();
         if (data.access_token) {
             zohoAccessToken = data.access_token;
+            lastTokenRefreshError = null;
             var expiresAt = new Date(Date.now() + (data.expires_in * 1000));
             await pool.query('INSERT INTO zoho_tokens (access_token, refresh_token, expires_at, updated_at) VALUES ($1, $2, $3, NOW())',
                 [zohoAccessToken, refreshToken, expiresAt]);
+            console.log('Zoho token refreshed successfully, expires:', expiresAt);
             return { success: true };
         }
-        return { success: false, error: data.error || 'Token refresh failed' };
+        lastTokenRefreshError = data.error || 'Token refresh failed: ' + JSON.stringify(data);
+        console.log('Token refresh failed:', lastTokenRefreshError);
+        return { success: false, error: lastTokenRefreshError };
     } catch (err) {
+        lastTokenRefreshError = err.message;
+        console.log('Token refresh exception:', err.message);
         return { success: false, error: err.message };
     }
 }
@@ -1979,12 +2000,27 @@ app.get('/api/zoho/status', async function(req, res) {
     res.json({
         configured: hasCredentials,
         connected: !!zohoAccessToken,
+        lastTokenError: lastTokenRefreshError,
+        lastRefreshAttempt: lastTokenRefreshAttempt ? new Date(lastTokenRefreshAttempt).toISOString() : null,
         cache: {
             cachedImages: cachedCount,
             cacheSizeMB: parseFloat(cacheSizeMB),
             stylesWithImageUrls: parseInt(stylesWithImages.rows[0].count),
             stylesCached: parseInt(stylesCached.rows[0].count)
         }
+    });
+});
+
+// Manual token refresh endpoint
+app.post('/api/zoho/refresh-token', async function(req, res) {
+    console.log('Manual token refresh requested');
+    // Reset cooldown to allow immediate refresh
+    lastTokenRefreshAttempt = 0;
+    var result = await refreshZohoToken();
+    res.json({
+        success: result.success,
+        error: result.error,
+        hasToken: !!zohoAccessToken
     });
 });
 
@@ -2579,6 +2615,18 @@ function getHTML() {
     html += '<div style="display:flex;gap:1rem;align-items:center">';
     html += '<button class="btn btn-secondary" onclick="startPreCache()" id="preCacheBtn" style="flex:1">🖼️ Pre-Cache Images</button>';
     html += '<span id="preCacheStatus" style="font-size:0.8125rem;color:#86868b"></span>';
+    html += '</div>';
+    html += '</div>';
+    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
+    html += '<div>';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Zoho Image Token</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Product images are fetched from Zoho WorkDrive. If images fail to load, try refreshing the token.</p>';
+    html += '<div id="tokenStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
+    html += '<span id="tokenStatusText">Checking token...</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:1rem;align-items:center">';
+    html += '<button class="btn btn-secondary" onclick="refreshZohoToken()" id="refreshTokenBtn" style="flex:1">🔄 Refresh Token</button>';
+    html += '<span id="refreshTokenStatus" style="font-size:0.8125rem;color:#86868b"></span>';
     html += '</div>';
     html += '</div>';
     html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
@@ -3827,6 +3875,7 @@ function getHTML() {
     html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
     html += 'if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear;';
     html += '});';
+    html += 'checkTokenStatus();';
     html += 'checkZohoStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
@@ -3877,6 +3926,42 @@ function getHTML() {
     html += 'else { status.textContent = "All images cached!"; }';
     html += '}';
     html += '} catch(e) { clearInterval(preCacheInterval); }';
+    html += '}';
+
+    // Zoho token status functions
+    html += 'async function checkTokenStatus() {';
+    html += 'var statusEl = document.getElementById("tokenStatusText");';
+    html += 'try {';
+    html += 'var res = await fetch("/api/zoho/status");';
+    html += 'var data = await res.json();';
+    html += 'if (!data.configured) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">⚠️ Zoho credentials not configured</span>\';';
+    html += '} else if (data.connected && !data.lastTokenError) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#34c759">✓ Token active</span> · \' + data.cache.cachedImages + " images cached";';
+    html += '} else if (data.lastTokenError) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff3b30">⚠️ Token error: \' + data.lastTokenError + \'</span>\';';
+    html += '} else {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">Token not initialized</span>\';';
+    html += '}';
+    html += '} catch(e) { statusEl.innerHTML = \'<span style="color:#ff3b30">Error checking status</span>\'; }';
+    html += '}';
+    html += 'async function refreshZohoToken() {';
+    html += 'var btn = document.getElementById("refreshTokenBtn");';
+    html += 'var status = document.getElementById("refreshTokenStatus");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Refreshing...";';
+    html += 'try {';
+    html += 'var res = await fetch("/api/zoho/refresh-token", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'status.innerHTML = \'<span style="color:#34c759">✓ Token refreshed!</span>\';';
+    html += 'checkTokenStatus();';
+    html += '} else {';
+    html += 'status.innerHTML = \'<span style="color:#ff3b30">Failed: \' + data.error + \'</span>\';';
+    html += '}';
+    html += '} catch(e) { status.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "🔄 Refresh Token";';
     html += '}';
 
     // Zoho Analytics sync functions
