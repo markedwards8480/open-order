@@ -3537,8 +3537,12 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
     // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
     html += 'if (state.filters.months.length === 0) {';
-    // Limit to last 12 months for better display
-    html += 'var displayMonths = sortedMonths.slice(-12);';
+    // Get months that actually have data in monthlyByComm, sorted, limited to last 12
+    html += 'var monthsWithData = Object.keys(monthlyByComm).filter(function(m) {';
+    html += 'var total = Object.values(monthlyByComm[m] || {}).reduce(function(a,v) { return a+v; }, 0);';
+    html += 'return total > 0 && m && m !== "9999-99";';
+    html += '}).sort();';
+    html += 'var displayMonths = monthsWithData.slice(-12);';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     // Build stacked bars
