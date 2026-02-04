@@ -2335,12 +2335,17 @@ function getHTML() {
     html += '.dashboard-charts{display:flex;flex-direction:column;gap:1rem;transition:opacity 0.3s,width 0.3s;position:relative}';
     html += '.dashboard-card{background:white;border-radius:16px;padding:1rem;border:1px solid rgba(0,0,0,0.04)}';
     html += '.dashboard-card h3{font-size:0.9375rem;font-weight:600;color:#1e3a5f;margin:0 0 0.75rem 0}';
-    // Mini stacked bar chart
-    html += '.mini-stacked{display:flex;gap:3px;align-items:flex-end;height:120px}';
-    html += '.mini-stacked-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;transition:opacity 0.15s}';
+    // Mini stacked bar chart - scrollable
+    html += '.mini-stacked-wrapper{overflow-x:auto;overflow-y:hidden;padding-bottom:4px;scroll-behavior:smooth}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar{height:6px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-track{background:#f0f0f0;border-radius:3px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}';
+    html += '.mini-stacked-wrapper::-webkit-scrollbar-thumb:hover{background:#aaa}';
+    html += '.mini-stacked{display:flex;gap:4px;align-items:flex-end;height:120px;min-width:max-content}';
+    html += '.mini-stacked-bar{width:40px;min-width:40px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;transition:opacity 0.15s}';
     html += '.mini-stacked-bar:hover{opacity:0.85}';
     html += '.mini-stacked-segment{transition:height 0.3s}';
-    html += '.mini-stacked-label{font-size:0.55rem;color:#666;text-align:center;margin-top:4px;white-space:nowrap;overflow:hidden}';
+    html += '.mini-stacked-label{font-size:0.55rem;color:#666;text-align:center;margin-top:4px;white-space:nowrap}';
     html += '.mini-stacked-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #eee}';
     html += '.legend-item{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:#666;cursor:pointer;padding:2px 4px;border-radius:3px}';
     html += '.legend-item:hover{background:#f0f4f8}';
@@ -3547,19 +3552,17 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
     // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
     html += 'if (state.filters.months.length === 0) {';
-    // Get months that actually have data in monthlyByComm, sorted, limited to last 12
-    // Also exclude future months beyond current month + 1
+    // Get months that actually have data in monthlyByComm, sorted - show ALL months, scrollable
     html += 'var now = new Date();';
-    html += 'var maxMonth = now.getFullYear() + "-" + String(now.getMonth() + 2).padStart(2, "0");';
-    html += 'var monthsWithData = Object.keys(monthlyByComm).filter(function(m) {';
+    html += 'var currentMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");';
+    html += 'var displayMonths = Object.keys(monthlyByComm).filter(function(m) {';
     html += 'var total = Object.values(monthlyByComm[m] || {}).reduce(function(a,v) { return a+v; }, 0);';
-    html += 'return total > 0 && m && m !== "9999-99" && m <= maxMonth;';
+    html += 'return total > 0 && m && m !== "9999-99";';
     html += '}).sort();';
-    html += 'var displayMonths = monthsWithData.slice(-8);';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
-    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
-    // Build stacked bars
-    html += 'out += \'<div class="mini-stacked">\';';
+    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(scroll to see all)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
+    // Build stacked bars in scrollable wrapper
+    html += 'out += \'<div class="mini-stacked-wrapper" id="stackedBarWrapper"><div class="mini-stacked">\';';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'displayMonths.forEach(function(monthKey) {';
     html += 'var monthData = monthlyByComm[monthKey] || {};';
@@ -3584,7 +3587,7 @@ function getHTML() {
     html += '}';
     html += 'out += \'</div><div class="mini-stacked-label">\' + monthName + \'</div></div>\';';
     html += '});';
-    html += 'out += \'</div>\';';
+    html += 'out += \'</div></div>\';'; // Close mini-stacked and wrapper
     // Legend
     html += 'out += \'<div class="mini-stacked-legend">\';';
     html += 'topComms.slice(0,6).forEach(function(comm, idx) {';
@@ -3678,7 +3681,18 @@ function getHTML() {
     html += '});';
     html += 'out += \'</div></div>\';'; // end dashboard-products
     html += 'out += \'</div>\';'; // end dashboard-layout
-    html += 'container.innerHTML = out; }';
+    html += 'container.innerHTML = out;';
+    // Scroll stacked bar to current month
+    html += 'setTimeout(function() {';
+    html += 'var wrapper = document.getElementById("stackedBarWrapper");';
+    html += 'if (wrapper) {';
+    html += 'var now = new Date();';
+    html += 'var currentMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");';
+    html += 'var bars = wrapper.querySelectorAll(".mini-stacked-bar");';
+    html += 'var targetIdx = -1;';
+    html += 'bars.forEach(function(bar, idx) { var label = bar.querySelector(".mini-stacked-label"); if (label && label.textContent) { var txt = label.textContent; var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var mIdx = monthNames.findIndex(function(m) { return txt.startsWith(m); }); if (mIdx >= 0) { var yr = "20" + txt.slice(-2); var mk = yr + "-" + String(mIdx + 1).padStart(2, "0"); if (mk === currentMonth) targetIdx = idx; } } });';
+    html += 'if (targetIdx > 0) { var scrollPos = Math.max(0, (targetIdx - 2) * 44); wrapper.scrollLeft = scrollPos; }';
+    html += '}}, 100); }';
 
     // Filter by commodity from dashboard
     html += 'function filterByCommodity(comm) {';
