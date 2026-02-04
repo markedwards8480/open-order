@@ -1066,7 +1066,7 @@ app.get('/api/po/filters', async function(req, res) {
 // Get PO data (grouped by style, like sales orders)
 app.get('/api/po/orders', async function(req, res) {
     try {
-        var conditions = [];
+        var conditions = ['po_number IS NOT NULL', "po_number != ''"];
         var params = [];
         var paramIndex = 1;
 
@@ -1077,12 +1077,11 @@ app.get('/api/po/orders', async function(req, res) {
             params.push(...vendors);
         }
 
-        // Commodity filter (single value for backward compatibility)
+        // Commodity filter
         if (req.query.commodity) {
             conditions.push('commodity = $' + paramIndex++);
             params.push(req.query.commodity);
         }
-        // Multi-select commodities filter
         if (req.query.commodities) {
             var commodityList = req.query.commodities.split(',').map(c => c.trim()).filter(c => c);
             if (commodityList.length > 0) {
@@ -1091,33 +1090,43 @@ app.get('/api/po/orders', async function(req, res) {
             }
         }
 
-        // PO Status filter (Open/Received)
+        // PO Status filter
         if (req.query.status && req.query.status !== 'All') {
             conditions.push('po_status = $' + paramIndex++);
             params.push(req.query.status);
         }
 
-        var whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+        var whereClause = 'WHERE ' + conditions.join(' AND ');
 
-        // Get items grouped by style
-        var itemsResult = await pool.query(`
+        // Get items grouped by style with PO details as JSON array
+        var query = `
             SELECT
                 style_number,
                 style_name,
                 commodity,
                 image_url,
-                vendor_name,
-                po_number,
-                po_status,
-                po_quantity,
-                po_unit_price,
-                po_total,
-                po_warehouse_date
+                json_agg(json_build_object(
+                    'id', id,
+                    'po_number', po_number,
+                    'vendor_name', vendor_name,
+                    'color', color,
+                    'po_quantity', po_quantity,
+                    'po_unit_price', po_unit_price,
+                    'po_total', po_total,
+                    'po_status', po_status,
+                    'po_warehouse_date', po_warehouse_date,
+                    'unit_price', unit_price
+                ) ORDER BY po_warehouse_date, po_number) as pos,
+                SUM(po_quantity) as total_qty,
+                SUM(po_total) as total_dollars,
+                COUNT(DISTINCT po_number) as po_count
             FROM order_items
             ${whereClause}
-            AND po_number IS NOT NULL AND po_number != ''
-            ORDER BY vendor_name, po_number, style_number
-        `, params);
+            GROUP BY style_number, style_name, commodity, image_url
+            ORDER BY SUM(po_total) DESC
+            LIMIT 500
+        `;
+        var itemsResult = await pool.query(query, params);
 
         // Get stats
         var statsResult = await pool.query(`
@@ -1129,12 +1138,54 @@ app.get('/api/po/orders', async function(req, res) {
                 COALESCE(SUM(po_total), 0) as total_dollars
             FROM order_items
             ${whereClause}
-            AND po_number IS NOT NULL AND po_number != ''
+        `, params);
+
+        // Get vendor breakdown
+        var vendorResult = await pool.query(`
+            SELECT vendor_name, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            GROUP BY vendor_name
+            ORDER BY SUM(po_total) DESC
+        `, params);
+
+        // Get commodity breakdown
+        var commodityResult = await pool.query(`
+            SELECT commodity, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            GROUP BY commodity
+            ORDER BY SUM(po_total) DESC
+        `, params);
+
+        // Get monthly breakdown (by warehouse date)
+        var monthlyResult = await pool.query(`
+            SELECT TO_CHAR(po_warehouse_date, 'YYYY-MM') as month, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
+            FROM order_items
+            ${whereClause}
+            AND po_warehouse_date IS NOT NULL
+            GROUP BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
+            ORDER BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
+        `, params);
+
+        // Get color breakdown
+        var colorResult = await pool.query(`
+            SELECT color, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty, COUNT(DISTINCT style_number) as style_count
+            FROM order_items
+            ${whereClause}
+            AND color IS NOT NULL AND color != ''
+            GROUP BY color
+            ORDER BY SUM(po_total) DESC
+            LIMIT 30
         `, params);
 
         res.json({
             items: itemsResult.rows,
-            stats: statsResult.rows[0]
+            stats: statsResult.rows[0],
+            vendorBreakdown: vendorResult.rows,
+            commodityBreakdown: commodityResult.rows,
+            monthlyBreakdown: monthlyResult.rows,
+            colorBreakdown: colorResult.rows
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2628,41 +2679,171 @@ function getHTML() {
     html += 'document.getElementById("statUnits").textContent = formatNumber(stats.total_qty || 0);';
     html += 'document.getElementById("statDollars").textContent = formatMoney(stats.total_dollars || 0);}';
 
-    // Render PO content
+    // Render PO content - routes to different views based on state.view
     html += 'function renderPOContent(data) {';
     html += 'var container = document.getElementById("content");';
+    html += 'try {';
+    html += 'if (state.view === "dashboard") { renderPODashboard(container, data); }';
+    html += 'else if (state.view === "styles") { renderPOStyles(container, data); }';
+    html += 'else if (state.view === "orders") { renderPOByVendor(container, data); }';
+    html += 'else if (state.view === "summary") { renderPOSummary(container, data); }';
+    html += 'else { renderPODashboard(container, data); }';
+    html += '} catch(e) { console.error("PO Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
+
+    // PO Dashboard view
+    html += 'function renderPODashboard(container, data) {';
     html += 'var items = data.items || [];';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3><p>Import data with PO information to see results</p></div>\'; return; }';
-    // Group by vendor
-    html += 'var vendorGroups = {};';
-    html += 'items.forEach(function(item) {';
-    html += 'var vendor = item.vendor_name || "Unknown";';
-    html += 'if (!vendorGroups[vendor]) vendorGroups[vendor] = { items: [], totalQty: 0, totalDollars: 0 };';
-    html += 'vendorGroups[vendor].items.push(item);';
-    html += 'vendorGroups[vendor].totalQty += item.po_quantity || 0;';
-    html += 'vendorGroups[vendor].totalDollars += item.po_total || 0;';
-    html += '});';
-    // Render
-    html += 'var out = \'<div class="month-groups">\';';
-    html += 'Object.keys(vendorGroups).sort().forEach(function(vendor) {';
-    html += 'var group = vendorGroups[vendor];';
-    html += 'out += \'<div class="month-section"><div class="month-header"><h2>\' + vendor + \'</h2><div class="month-stats"><span>\' + group.items.length + \' styles</span><span>\' + formatNumber(group.totalQty) + \' units</span><span class="money">$\' + formatNumber(Math.round(group.totalDollars)) + \'</span></div></div>\';';
-    html += 'out += \'<div class="styles-grid">\';';
-    html += 'group.items.forEach(function(item) {';
-    html += 'var imgSrc = item.image_url || "";';
-    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
-    html += 'out += \'<div class="style-card"><div class="style-image"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\\'none\\\'"></div>\';';
-    html += 'out += \'<div class="style-info"><div class="style-name">\' + (item.style_name || item.style_number) + \'</div><div class="style-number">\' + item.style_number + \'</div>\';';
-    html += 'out += \'<div class="style-meta"><span class="commodity-tag">\' + (item.commodity || "-") + \'</span></div>\';';
-    html += 'out += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.po_quantity || 0) + \'</div><div class="style-stat-label">Units</div></div>\';';
-    html += 'out += \'<div class="style-stat"><div class="style-stat-value money">$\' + formatNumber(Math.round(item.po_total || 0)) + \'</div><div class="style-stat-label">Value</div></div>\';';
-    html += 'out += \'<div class="style-stat"><div class="style-stat-value">\' + (item.po_number || "-") + \'</div><div class="style-stat-label">PO#</div></div></div></div></div>\';';
+    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b"];';
+    html += 'var vendorData = data.vendorBreakdown || [];';
+    html += 'var commData = data.commodityBreakdown || [];';
+    html += 'var monthlyData = data.monthlyBreakdown || [];';
+    html += 'var total = vendorData.reduce(function(a,v) { return a + parseFloat(v.total_dollars||0); }, 0);';
+    html += 'var out = "";';
+    // Month timeline
+    html += 'out += \'<div class="dashboard-timeline"><span class="timeline-title">📅 ETA Months:</span><div class="timeline-bars">\';';
+    html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'monthlyData.forEach(function(m) {';
+    html += 'if (!m.month) return;';
+    html += 'var parts = m.month.split("-");';
+    html += 'var monthName = months[parseInt(parts[1])-1];';
+    html += 'var yearShort = parts[0].slice(2);';
+    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + " \\'\" + yearShort + \'</span></div>\';';
+    html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
+    // Main layout
+    html += 'out += \'<div class="dashboard-layout">\';';
+    // Left sidebar - charts
+    html += 'out += \'<div class="dashboard-charts">\';';
+    // Vendor treemap
+    html += 'out += \'<div class="dashboard-card"><h3>🏭 By Vendor <span style="font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
+    html += 'vendorData.slice(0,10).forEach(function(v, idx) {';
+    html += 'var value = parseFloat(v.total_dollars) || 0;';
+    html += 'var pct = total > 0 ? (value / total * 100) : 0;';
+    html += 'var size = Math.max(Math.sqrt(pct) * 10, 12);';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'">\';';
+    html += 'out += \'<div class="treemap-label">\' + (v.vendor_name || "Unknown") + \'</div>\';';
+    html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
+    html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
-    html += 'out += \'</div>\';';
-    html += 'container.innerHTML = out;';
-    html += '}';
+    html += 'out += \'</div></div>\';';
+    // Commodity breakdown
+    html += 'out += \'<div class="dashboard-card"><h3>📦 By Commodity</h3><div class="dashboard-treemap">\';';
+    html += 'commData.slice(0,8).forEach(function(c, idx) {';
+    html += 'var value = parseFloat(c.total_dollars) || 0;';
+    html += 'var pct = total > 0 ? (value / total * 100) : 0;';
+    html += 'var size = Math.max(Math.sqrt(pct) * 10, 12);';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'">\';';
+    html += 'out += \'<div class="treemap-label">\' + (c.commodity || "Other") + \'</div>\';';
+    html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
+    html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';'; // end dashboard-charts
+    // Right side - top styles
+    html += 'out += \'<div class="dashboard-products">\';';
+    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 50) + \' of \' + items.length + \')</span></h3>\';';
+    html += 'out += \'<div class="dashboard-styles-grid">\';';
+    html += 'items.slice(0, 50).forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
+    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-img"><img src="\' + (imgSrc || "") + \'" alt="" loading="lazy" onerror="this.style.display=\\x27none\\x27"></div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \' <span style="color:#86868b;font-size:0.625rem">\' + poCount + \' PO\' + (poCount !== 1 ? "s" : "") + \'</span></div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';'; // end dashboard-layout
+    html += 'container.innerHTML = out; }';
+
+    // PO Styles view
+    html += 'function renderPOStyles(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    html += 'var html = \'<div class="product-grid">\';';
+    html += 'items.forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
+    html += 'html += \'<div class="style-card"><div class="style-image">\';';
+    html += 'if (item.commodity) html += \'<span class="commodity-badge">\' + escapeHtml(item.commodity) + \'</span>\';';
+    html += 'html += \'<span class="style-badge">\' + poCount + \' PO\' + (poCount > 1 ? "s" : "") + \'</span>\';';
+    html += 'if (imgSrc) html += \'<img src="\' + imgSrc + \'" alt="" onerror="this.style.display=\\\'none\\\'">\';';
+    html += 'else html += \'<span style="color:#ccc;font-size:3rem">👔</span>\';';
+    html += 'html += \'</div><div class="style-info"><div class="style-number">\' + escapeHtml(item.style_number) + \'</div>\';';
+    html += 'html += \'<div class="style-name">\' + escapeHtml(item.style_name || item.style_number) + \'</div>\';';
+    html += 'html += \'<div class="style-stats"><div class="style-stat"><div class="style-stat-value">\' + formatNumber(item.total_qty || 0) + \'</div><div class="style-stat-label">Units</div></div>\';';
+    html += 'html += \'<div class="style-stat"><div class="style-stat-value money">\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</div><div class="style-stat-label">Value</div></div></div></div></div>\'; });';
+    html += 'html += \'</div>\'; container.innerHTML = html; }';
+
+    // PO By Vendor view
+    html += 'function renderPOByVendor(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    html += 'var vendorGroups = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'if (!item.pos) return;';
+    html += 'item.pos.forEach(function(po) {';
+    html += 'var vendor = po.vendor_name || "Unknown";';
+    html += 'if (!vendorGroups[vendor]) vendorGroups[vendor] = { totalQty: 0, totalDollars: 0, pos: {} };';
+    html += 'var poNum = po.po_number || "Unknown";';
+    html += 'if (!vendorGroups[vendor].pos[poNum]) vendorGroups[vendor].pos[poNum] = { items: [], totalQty: 0, totalDollars: 0, warehouseDate: po.po_warehouse_date };';
+    html += 'vendorGroups[vendor].pos[poNum].items.push({ style: item.style_number, name: item.style_name, qty: po.po_quantity, total: po.po_total, image: item.image_url });';
+    html += 'vendorGroups[vendor].pos[poNum].totalQty += po.po_quantity || 0;';
+    html += 'vendorGroups[vendor].pos[poNum].totalDollars += po.po_total || 0;';
+    html += 'vendorGroups[vendor].totalQty += po.po_quantity || 0;';
+    html += 'vendorGroups[vendor].totalDollars += po.po_total || 0;';
+    html += '}); });';
+    html += 'var sortedVendors = Object.keys(vendorGroups).sort(function(a,b) { return vendorGroups[b].totalDollars - vendorGroups[a].totalDollars; });';
+    html += 'var out = \'<div class="so-grid">\';';
+    html += 'sortedVendors.forEach(function(vendor) {';
+    html += 'var vg = vendorGroups[vendor];';
+    html += 'var poNums = Object.keys(vg.pos).sort();';
+    html += 'out += \'<div class="so-card"><div class="so-header"><div class="so-info"><h3>\' + vendor + \'</h3><span>\' + poNums.length + \' POs · \' + formatNumber(vg.totalQty) + \' units</span></div><div class="so-meta"><div class="total">$\' + formatNumber(Math.round(vg.totalDollars)) + \'</div></div></div>\';';
+    html += 'poNums.forEach(function(poNum) {';
+    html += 'var po = vg.pos[poNum];';
+    html += 'var eta = po.warehouseDate ? new Date(po.warehouseDate).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
+    html += 'out += \'<div style="padding:0.75rem 1rem;background:#f8fafc;border-top:1px solid #eee"><strong>PO# \' + poNum + \'</strong> <span style="color:#86868b;margin-left:1rem">ETA: \' + eta + \' · \' + po.items.length + \' styles · $\' + formatNumber(Math.round(po.totalDollars)) + \'</span></div>\';';
+    html += '}); out += \'</div>\'; });';
+    html += 'out += \'</div>\'; container.innerHTML = out; }';
+
+    // PO Summary view (commodity x month matrix)
+    html += 'function renderPOSummary(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    html += 'var commData = {}; var months = new Set();';
+    html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'if (!commData[comm]) commData[comm] = { total: 0, months: {} };';
+    html += 'if (item.pos) item.pos.forEach(function(po) {';
+    html += 'var monthKey = po.po_warehouse_date ? po.po_warehouse_date.substring(0,7) : "TBD";';
+    html += 'months.add(monthKey);';
+    html += 'if (!commData[comm].months[monthKey]) commData[comm].months[monthKey] = 0;';
+    html += 'commData[comm].months[monthKey] += po.po_total || 0;';
+    html += 'commData[comm].total += po.po_total || 0;';
+    html += '}); });';
+    html += 'var sortedComms = Object.keys(commData).sort(function(a,b) { return commData[b].total - commData[a].total; });';
+    html += 'var sortedMonths = Array.from(months).sort();';
+    html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'var out = \'<div class="summary-container"><table class="summary-table"><thead><tr><th>Commodity</th>\';';
+    html += 'sortedMonths.forEach(function(m) { if (m === "TBD") out += \'<th>TBD</th>\'; else { var parts = m.split("-"); out += \'<th>\' + monthNames[parseInt(parts[1])-1] + " \\'\" + parts[0].slice(2) + \'</th>\'; }});';
+    html += 'out += \'<th class="row-total">Total</th></tr></thead><tbody>\';';
+    html += 'sortedComms.forEach(function(comm) {';
+    html += 'out += \'<tr><td>\' + comm + \'</td>\';';
+    html += 'sortedMonths.forEach(function(m) {';
+    html += 'var val = commData[comm].months[m] || 0;';
+    html += 'out += \'<td><div class="summary-cell\' + (val > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(val) + \'</span></div></td>\';';
+    html += '});';
+    html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(commData[comm].total) + \'</span></div></td></tr>\';';
+    html += '});';
+    html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
 
     // Render content
     html += 'function renderContent(data) {';
@@ -3765,6 +3946,7 @@ function getHTML() {
     html += 'function switchMode(mode) {';
     html += 'if (state.mode === mode) return;';
     html += 'state.mode = mode;';
+    html += 'state.view = "dashboard";'; // Reset to dashboard when switching modes
     html += 'document.querySelectorAll(".mode-btn").forEach(function(b) { b.classList.remove("active"); });';
     html += 'document.querySelector(".mode-btn[data-mode=\'" + mode + "\']").classList.add("active");';
     html += 'if (mode === "po") {';
@@ -3773,14 +3955,26 @@ function getHTML() {
     html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Vendors";';
     html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
     html += 'document.querySelectorAll(".status-btn")[1].textContent = "Received";';
+    // Update view toggle for PO mode
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button>\';';
+    html += 'bindViewToggle();';
     html += '} else {';
     html += 'document.getElementById("dashboardTitle").textContent = "Open Orders";';
     html += 'document.getElementById("statOrders").parentElement.querySelector(".stat-label").textContent = "Open Orders";';
     html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Customers";';
     html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
     html += 'document.querySelectorAll(".status-btn")[1].textContent = "Invoiced";';
+    // Restore view toggle for Sales mode
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button>\';';
+    html += 'bindViewToggle();';
     html += '}';
     html += 'loadData();';
+    html += '}';
+    // Function to rebind view toggle events
+    html += 'function bindViewToggle() {';
+    html += 'document.querySelectorAll(".view-btn").forEach(function(btn) { btn.addEventListener("click", function() {';
+    html += 'document.querySelectorAll(".view-btn").forEach(function(b) { b.classList.remove("active"); });';
+    html += 'btn.classList.add("active"); state.view = btn.dataset.view; loadData(); }); });';
     html += '}';
 
     // Filter handlers - multi-selects are handled by updateMultiFilter function
