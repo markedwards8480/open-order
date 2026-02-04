@@ -1967,48 +1967,58 @@ app.get('/api/images/precache/status', function(req, res) {
 
 // Zoho status and cache stats
 app.get('/api/zoho/status', async function(req, res) {
-    var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
+    try {
+        var hasCredentials = !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
 
-    // Get cached image count and size
-    var cacheStats = await pool.query(`
-        SELECT
-            COUNT(*) as count,
-            COALESCE(SUM(LENGTH(image_data)), 0) as total_bytes
-        FROM image_cache
-        WHERE image_data IS NOT NULL
-    `);
+        // Get cached image count and size
+        var cacheStats = await pool.query(`
+            SELECT
+                COUNT(*) as count,
+                COALESCE(SUM(LENGTH(image_data)), 0) as total_bytes
+            FROM image_cache
+            WHERE image_data IS NOT NULL
+        `);
 
-    // Get count of unique styles with image URLs
-    var stylesWithImages = await pool.query(`
-        SELECT COUNT(DISTINCT style_number) as count
-        FROM order_items
-        WHERE image_url IS NOT NULL AND image_url != ''
-    `);
+        // Get count of unique styles with image URLs
+        var stylesWithImages = await pool.query(`
+            SELECT COUNT(DISTINCT style_number) as count
+            FROM order_items
+            WHERE image_url IS NOT NULL AND image_url != ''
+        `);
 
-    // Get count of styles that have a Zoho file ID that's already cached
-    var stylesCached = await pool.query(`
-        SELECT COUNT(DISTINCT o.style_number) as count
-        FROM order_items o
-        JOIN image_cache c ON o.image_url LIKE '%' || c.file_id || '%'
-        WHERE o.image_url IS NOT NULL AND o.image_url != ''
-    `);
+        // Get count of styles that have a Zoho file ID that's already cached
+        var stylesCached = await pool.query(`
+            SELECT COUNT(DISTINCT o.style_number) as count
+            FROM order_items o
+            JOIN image_cache c ON o.image_url LIKE '%' || c.file_id || '%'
+            WHERE o.image_url IS NOT NULL AND o.image_url != ''
+        `);
 
-    var cachedCount = parseInt(cacheStats.rows[0].count);
-    var cacheSizeBytes = parseInt(cacheStats.rows[0].total_bytes);
-    var cacheSizeMB = (cacheSizeBytes / (1024 * 1024)).toFixed(2);
+        var cachedCount = parseInt(cacheStats.rows[0].count);
+        var cacheSizeBytes = parseInt(cacheStats.rows[0].total_bytes);
+        var cacheSizeMB = (cacheSizeBytes / (1024 * 1024)).toFixed(2);
 
-    res.json({
-        configured: hasCredentials,
-        connected: !!zohoAccessToken,
-        lastTokenError: lastTokenRefreshError,
-        lastRefreshAttempt: lastTokenRefreshAttempt ? new Date(lastTokenRefreshAttempt).toISOString() : null,
-        cache: {
-            cachedImages: cachedCount,
-            cacheSizeMB: parseFloat(cacheSizeMB),
-            stylesWithImageUrls: parseInt(stylesWithImages.rows[0].count),
-            stylesCached: parseInt(stylesCached.rows[0].count)
-        }
-    });
+        res.json({
+            configured: hasCredentials,
+            connected: !!zohoAccessToken,
+            lastTokenError: lastTokenRefreshError,
+            lastRefreshAttempt: lastTokenRefreshAttempt ? new Date(lastTokenRefreshAttempt).toISOString() : null,
+            cache: {
+                cachedImages: cachedCount,
+                cacheSizeMB: parseFloat(cacheSizeMB),
+                stylesWithImageUrls: parseInt(stylesWithImages.rows[0].count),
+                stylesCached: parseInt(stylesCached.rows[0].count)
+            }
+        });
+    } catch (err) {
+        console.error('Zoho status error:', err.message);
+        res.json({
+            configured: !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN),
+            connected: !!zohoAccessToken,
+            lastTokenError: lastTokenRefreshError || err.message,
+            cache: { cachedImages: 0, cacheSizeMB: 0, stylesWithImageUrls: 0, stylesCached: 0 }
+        });
+    }
 });
 
 // Manual token refresh endpoint
