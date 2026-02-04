@@ -2388,6 +2388,16 @@ function getHTML() {
     html += '.filter-clear-btn:hover{background:#d63030}';
     // YoY comparison styles
     html += '.treemap-yoy{font-size:0.6875rem;font-weight:700;margin-top:2px}';
+    html += '.yoy-list{display:flex;flex-direction:column;gap:6px}';
+    html += '.yoy-row{display:flex;justify-content:space-between;align-items:center;padding:8px;background:#f8fafc;border-radius:6px}';
+    html += '.yoy-cust{font-weight:600;color:#1e3a5f;font-size:0.8125rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
+    html += '.yoy-values{display:flex;align-items:center;gap:6px;font-size:0.75rem}';
+    html += '.yoy-ty{font-weight:600;color:#1e3a5f}';
+    html += '.yoy-vs{color:#86868b;font-size:0.625rem}';
+    html += '.yoy-ly{color:#86868b}';
+    html += '.yoy-up{color:#34c759;font-weight:700;font-size:0.6875rem}';
+    html += '.yoy-down{color:#ff3b30;font-weight:700;font-size:0.6875rem}';
+    html += '.yoy-flat{color:#86868b;font-weight:700;font-size:0.6875rem}';
     // Missing customers styles
     html += '.missing-customers{border:2px solid #ff3b30;background:#fff5f5}';
     html += '.missing-list{display:flex;flex-direction:column;gap:4px}';
@@ -3597,6 +3607,24 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'if (state.filters.commodities.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear commodities (\' + state.filters.commodities.length + \')</button>\'; }';
     html += 'out += \'</div>\';';
+    // Customer TY vs LY comparison tile (only show if YoY data exists)
+    html += 'var hasYoYData = Object.keys(prevCustLookup).length > 0;';
+    html += 'if (hasYoYData) {';
+    html += 'out += \'<div class="dashboard-card"><h3>📊 Customer TY vs LY</h3><div class="yoy-list">\';';
+    html += 'custSorted.slice(0, 8).forEach(function(entry) {';
+    html += 'var cust = entry[0], tyValue = entry[1];';
+    html += 'var lyValue = prevCustLookup[cust] || 0;';
+    html += 'var change = lyValue > 0 ? ((tyValue - lyValue) / lyValue * 100) : (tyValue > 0 ? 100 : 0);';
+    html += 'var changeClass = change > 0 ? "yoy-up" : (change < 0 ? "yoy-down" : "yoy-flat");';
+    html += 'var changeIcon = change > 0 ? "▲" : (change < 0 ? "▼" : "–");';
+    html += 'out += \'<div class="yoy-row"><div class="yoy-cust">\' + cust + \'</div>\';';
+    html += 'out += \'<div class="yoy-values"><span class="yoy-ty">$\' + Math.round(tyValue/1000).toLocaleString() + \'K</span>\';';
+    html += 'out += \'<span class="yoy-vs">vs</span>\';';
+    html += 'out += \'<span class="yoy-ly">$\' + Math.round(lyValue/1000).toLocaleString() + \'K</span>\';';
+    html += 'out += \'<span class="\' + changeClass + \'">\' + changeIcon + \' \' + Math.abs(change).toFixed(0) + \'%</span></div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '}';
     // Top customers (using full data from API)
     html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
     html += 'var topCust = custSorted.slice(0, 8);';
