@@ -2304,7 +2304,7 @@ function getHTML() {
     html += '.mini-stacked-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;transition:opacity 0.15s}';
     html += '.mini-stacked-bar:hover{opacity:0.85}';
     html += '.mini-stacked-segment{transition:height 0.3s}';
-    html += '.mini-stacked-label{font-size:0.6rem;color:#666;text-align:center;margin-top:4px;white-space:nowrap}';
+    html += '.mini-stacked-label{font-size:0.55rem;color:#666;text-align:center;margin-top:4px;white-space:nowrap;overflow:hidden}';
     html += '.mini-stacked-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #eee}';
     html += '.legend-item{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:#666;cursor:pointer;padding:2px 4px;border-radius:3px}';
     html += '.legend-item:hover{background:#f0f4f8}';
@@ -3489,16 +3489,19 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-charts" id="dashboardSidebar">\';';
     // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
     html += 'if (state.filters.months.length === 0) {';
+    // Limit to last 12 months for better display
+    html += 'var displayMonths = sortedMonths.slice(-12);';
+    html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="font-size:0.75rem;color:#86868b">(click to filter)</span> <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span> <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     // Build stacked bars
     html += 'out += \'<div class="mini-stacked">\';';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
-    html += 'sortedMonths.forEach(function(monthKey) {';
+    html += 'displayMonths.forEach(function(monthKey) {';
     html += 'var monthData = monthlyByComm[monthKey] || {};';
     html += 'var monthTotal = Object.values(monthData).reduce(function(a,v) { return a + v; }, 0);';
-    html += 'var barHeight = maxMonthValue > 0 ? (monthTotal / maxMonthValue * 100) : 0;';
+    html += 'var barHeight = displayMax > 0 ? (monthTotal / displayMax * 100) : 0;';
     html += 'var parts = monthKey.split("-");';
-    html += 'var monthName = monthNames[parseInt(parts[1])-1];';
+    html += 'var monthName = monthNames[parseInt(parts[1])-1] + " \\x27" + parts[0].slice(2);';
     html += 'out += \'<div class="mini-stacked-bar" style="height:100%">\';';
     html += 'out += \'<div style="height:\' + barHeight + \'%;display:flex;flex-direction:column;justify-content:flex-end">\';';
     // Build segments for each commodity
