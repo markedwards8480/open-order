@@ -3548,9 +3548,12 @@ function getHTML() {
     // Mini stacked bar chart - only show when viewing multiple months (not when single month filtered)
     html += 'if (state.filters.months.length === 0) {';
     // Get months that actually have data in monthlyByComm, sorted, limited to last 12
+    // Also exclude future months beyond current month + 1
+    html += 'var now = new Date();';
+    html += 'var maxMonth = now.getFullYear() + "-" + String(now.getMonth() + 2).padStart(2, "0");';
     html += 'var monthsWithData = Object.keys(monthlyByComm).filter(function(m) {';
     html += 'var total = Object.values(monthlyByComm[m] || {}).reduce(function(a,v) { return a+v; }, 0);';
-    html += 'return total > 0 && m && m !== "9999-99";';
+    html += 'return total > 0 && m && m !== "9999-99" && m <= maxMonth;';
     html += '}).sort();';
     html += 'var displayMonths = monthsWithData.slice(-12);';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
