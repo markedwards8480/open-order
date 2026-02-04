@@ -1882,34 +1882,31 @@ async function preCacheImages() {
     }
 
     preCacheRunning = true;
+    preCacheProgress = { total: 0, done: 0, errors: 0, phase: 'discovering' };
     console.log('Starting background image pre-cache...');
 
     try {
-        // Get all unique image URLs that aren't cached yet
+        // Efficient single query: extract file IDs and find uncached ones in one go
+        console.log('Finding uncached images...');
         var result = await pool.query(`
-            SELECT DISTINCT image_url
-            FROM order_items
-            WHERE image_url IS NOT NULL
-            AND image_url != ''
-            AND image_url LIKE '%/download/%'
+            WITH image_file_ids AS (
+                SELECT DISTINCT
+                    SUBSTRING(image_url FROM '/download/([a-zA-Z0-9]+)') as file_id
+                FROM order_items
+                WHERE image_url IS NOT NULL
+                AND image_url != ''
+                AND image_url LIKE '%/download/%'
+            )
+            SELECT file_id
+            FROM image_file_ids i
+            WHERE file_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM image_cache c WHERE c.file_id = i.file_id
+            )
         `);
 
-        var imageUrls = result.rows.map(r => r.image_url);
-        var uncached = [];
-
-        // Check which aren't cached
-        for (var url of imageUrls) {
-            var match = url.match(/\/download\/([a-zA-Z0-9]+)/);
-            if (match) {
-                var fileId = match[1];
-                var cached = await pool.query('SELECT 1 FROM image_cache WHERE file_id = $1', [fileId]);
-                if (cached.rows.length === 0) {
-                    uncached.push(fileId);
-                }
-            }
-        }
-
-        preCacheProgress = { total: uncached.length, done: 0, errors: 0 };
+        var uncached = result.rows.map(r => r.file_id);
+        preCacheProgress = { total: uncached.length, done: 0, errors: 0, phase: 'caching' };
         console.log('Found ' + uncached.length + ' images to pre-cache');
 
         // Process in batches of 5 parallel requests
@@ -1932,15 +1929,22 @@ async function preCacheImages() {
                 }
             }));
 
-            // Small delay between batches to avoid rate limits
+            // Longer delay between batches to avoid Zoho rate limits
             if (i + batchSize < uncached.length) {
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            // Log progress every 50 images
+            if (preCacheProgress.done > 0 && preCacheProgress.done % 50 === 0) {
+                console.log('Pre-cache progress: ' + preCacheProgress.done + '/' + preCacheProgress.total + ' (' + preCacheProgress.errors + ' errors)');
             }
         }
 
+        preCacheProgress.phase = 'complete';
         console.log('Pre-cache complete! Done: ' + preCacheProgress.done + ', Errors: ' + preCacheProgress.errors);
     } catch (err) {
         console.error('Pre-cache failed:', err.message);
+        preCacheProgress.phase = 'error: ' + err.message;
     } finally {
         preCacheRunning = false;
     }
@@ -1961,7 +1965,8 @@ app.post('/api/images/precache', async function(req, res) {
 app.get('/api/images/precache/status', function(req, res) {
     res.json({
         running: preCacheRunning,
-        progress: preCacheProgress
+        progress: preCacheProgress,
+        phase: preCacheProgress.phase || 'idle'
     });
 });
 
@@ -3985,7 +3990,10 @@ function getHTML() {
     html += 'var data = await res.json();';
     html += 'if (data.running) {';
     html += 'btn.textContent = "⏳ Caching...";';
-    html += 'status.textContent = data.progress.done + "/" + data.progress.total + " images";';
+    html += 'var phase = data.progress.phase || "working";';
+    html += 'if (phase === "discovering") { status.textContent = "Finding uncached images..."; }';
+    html += 'else if (data.progress.total > 0) { status.textContent = data.progress.done + "/" + data.progress.total + " images (" + data.progress.errors + " errors)"; }';
+    html += 'else { status.textContent = "Starting..."; }';
     html += '} else {';
     html += 'clearInterval(preCacheInterval);';
     html += 'btn.disabled = false;';
