@@ -566,7 +566,7 @@ app.get('/api/orders', async function(req, res) {
             params.push(customer);
         }
         if (customers) {
-            var customerList = customers.split(',').map(c => c.trim()).filter(c => c);
+            var customerList = customers.split('||').map(c => c.trim()).filter(c => c);
             if (customerList.length > 0) {
                 conditions.push('customer = ANY($' + paramIndex++ + ')');
                 params.push(customerList);
@@ -883,7 +883,7 @@ app.get('/api/orders/by-so', async function(req, res) {
             params.push(customer);
         }
         if (customers) {
-            var customerList = customers.split(',').map(c => c.trim()).filter(c => c);
+            var customerList = customers.split('||').map(c => c.trim()).filter(c => c);
             if (customerList.length > 0) {
                 conditions.push('customer = ANY($' + paramIndex++ + ')');
                 params.push(customerList);
@@ -2705,7 +2705,7 @@ function getHTML() {
     // Sales mode - all filters now use arrays
     html += 'if (state.filters.years.length > 0) params.append("years", state.filters.years.join(","));';
     html += 'if (state.filters.fiscalYears.length > 0) params.append("fiscalYears", state.filters.fiscalYears.join(","));';
-    html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join(","));';
+    html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join("||"));';
     html += 'if (state.filters.months.length > 0) params.append("months", state.filters.months.join(","));';
     html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
