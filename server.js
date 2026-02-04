@@ -2708,7 +2708,7 @@ function getHTML() {
     html += 'var parts = m.month.split("-");';
     html += 'var monthName = months[parseInt(parts[1])-1];';
     html += 'var yearShort = parts[0].slice(2);';
-    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + " \\'\" + yearShort + \'</span></div>\';';
+    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + " \\x27" + yearShort + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
@@ -2832,7 +2832,7 @@ function getHTML() {
     html += 'var sortedMonths = Array.from(months).sort();';
     html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
     html += 'var out = \'<div class="summary-container"><table class="summary-table"><thead><tr><th>Commodity</th>\';';
-    html += 'sortedMonths.forEach(function(m) { if (m === "TBD") out += \'<th>TBD</th>\'; else { var parts = m.split("-"); out += \'<th>\' + monthNames[parseInt(parts[1])-1] + " \\'\" + parts[0].slice(2) + \'</th>\'; }});';
+    html += 'sortedMonths.forEach(function(m) { if (m === "TBD") out += \'<th>TBD</th>\'; else { var parts = m.split("-"); out += \'<th>\' + monthNames[parseInt(parts[1])-1] + " \\x27" + parts[0].slice(2) + \'</th>\'; }});';
     html += 'out += \'<th class="row-total">Total</th></tr></thead><tbody>\';';
     html += 'sortedComms.forEach(function(comm) {';
     html += 'out += \'<tr><td>\' + comm + \'</td>\';';
