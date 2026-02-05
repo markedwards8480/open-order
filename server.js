@@ -316,6 +316,286 @@ async function syncFromZohoAnalytics() {
 }
 
 // ============================================
+// WORKDRIVE FOLDER SYNC - Auto-sync from WorkDrive folder
+// ============================================
+
+// WorkDrive folder configuration - Catalog Files/Open Sales Query
+var WORKDRIVE_SYNC_FOLDER_ID = process.env.WORKDRIVE_SYNC_FOLDER_ID || '';
+var WORKDRIVE_TEAM_ID = process.env.WORKDRIVE_TEAM_ID || '';
+
+// List files in a WorkDrive folder
+async function listWorkDriveFolder(folderId) {
+    if (!zohoAccessToken) {
+        var tokenResult = await refreshZohoToken(true);
+        if (!tokenResult.success) {
+            return { success: false, error: 'Failed to get Zoho token: ' + tokenResult.error };
+        }
+    }
+
+    try {
+        var url = 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files';
+        var response = await fetch(url, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+
+        if (response.status === 401) {
+            await refreshZohoToken(true);
+            response = await fetch(url, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
+
+        if (!response.ok) {
+            return { success: false, error: 'WorkDrive API error: ' + response.status };
+        }
+
+        var data = await response.json();
+        return { success: true, files: data.data || [] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Find the latest CSV file in the folder (by filename date or modified date)
+function findLatestCSV(files) {
+    var csvFiles = files.filter(function(f) {
+        return f.attributes && f.attributes.name && f.attributes.name.toLowerCase().endsWith('.csv');
+    });
+
+    if (csvFiles.length === 0) return null;
+
+    // Sort by modified date (newest first)
+    csvFiles.sort(function(a, b) {
+        var dateA = new Date(a.attributes.modified_time || 0);
+        var dateB = new Date(b.attributes.modified_time || 0);
+        return dateB - dateA;
+    });
+
+    return csvFiles[0];
+}
+
+// Download a file from WorkDrive
+async function downloadWorkDriveFile(fileId) {
+    if (!zohoAccessToken) {
+        var tokenResult = await refreshZohoToken(true);
+        if (!tokenResult.success) {
+            return { success: false, error: 'Failed to get Zoho token: ' + tokenResult.error };
+        }
+    }
+
+    try {
+        var url = 'https://workdrive.zoho.com/api/v1/download/' + fileId;
+        var response = await fetch(url, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+
+        if (response.status === 401) {
+            await refreshZohoToken(true);
+            response = await fetch(url, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
+
+        if (!response.ok) {
+            return { success: false, error: 'Download failed: ' + response.status };
+        }
+
+        var text = await response.text();
+        return { success: true, content: text };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Sync data from WorkDrive folder
+async function syncFromWorkDriveFolder() {
+    console.log('Starting WorkDrive folder sync...');
+
+    if (!WORKDRIVE_SYNC_FOLDER_ID) {
+        return { success: false, error: 'WorkDrive folder ID not configured' };
+    }
+
+    // List files in folder
+    var listResult = await listWorkDriveFolder(WORKDRIVE_SYNC_FOLDER_ID);
+    if (!listResult.success) {
+        return listResult;
+    }
+
+    // Find latest CSV
+    var latestFile = findLatestCSV(listResult.files);
+    if (!latestFile) {
+        return { success: false, error: 'No CSV files found in folder' };
+    }
+
+    var fileName = latestFile.attributes.name;
+    var fileId = latestFile.id;
+    var modifiedTime = latestFile.attributes.modified_time;
+
+    console.log('Found latest file: ' + fileName + ' (modified: ' + modifiedTime + ')');
+
+    // Check if we already imported this file
+    var lastImport = await pool.query(
+        "SELECT * FROM import_history WHERE import_type = 'workdrive_sync' AND error_message = $1 ORDER BY created_at DESC LIMIT 1",
+        [fileName]
+    );
+    if (lastImport.rows.length > 0) {
+        var lastImportTime = new Date(lastImport.rows[0].created_at);
+        var fileModTime = new Date(modifiedTime);
+        if (fileModTime <= lastImportTime) {
+            return { success: true, message: 'File already imported: ' + fileName, skipped: true };
+        }
+    }
+
+    // Download the file
+    console.log('Downloading file: ' + fileName);
+    var downloadResult = await downloadWorkDriveFile(fileId);
+    if (!downloadResult.success) {
+        return downloadResult;
+    }
+
+    // Parse CSV
+    var lines = downloadResult.content.split('\n');
+    var headers = [];
+    var rows = [];
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+
+        // Simple CSV parsing (handles basic cases)
+        var values = [];
+        var inQuotes = false;
+        var currentValue = '';
+        for (var j = 0; j < line.length; j++) {
+            var char = line[j];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                values.push(currentValue.trim());
+                currentValue = '';
+            } else {
+                currentValue += char;
+            }
+        }
+        values.push(currentValue.trim());
+
+        if (i === 0) {
+            headers = values.map(function(h) { return h.toLowerCase().replace(/[^a-z0-9_]/g, '_'); });
+        } else {
+            var row = {};
+            headers.forEach(function(h, idx) { row[h] = values[idx] || ''; });
+            rows.push(row);
+        }
+    }
+
+    console.log('Parsed ' + rows.length + ' rows from CSV');
+
+    // Import the data (same logic as Zoho Analytics sync)
+    var imported = 0;
+    var errors = [];
+
+    // Clear existing data but KEEP image_cache
+    await pool.query('DELETE FROM order_items');
+    console.log('Cleared existing order data (keeping image cache)');
+
+    // Column mapping (flexible matching)
+    function findCol(possibleNames) {
+        for (var name of possibleNames) {
+            if (headers.includes(name)) return name;
+        }
+        return null;
+    }
+
+    var mapping = {
+        so_number: findCol(['so_number', 'salesorder_number', 'sales_order_number', 'order_number', 'so_']),
+        customer: findCol(['customer_name', 'customer', 'account_name', 'client']),
+        style_number: findCol(['style_number', 'style', 'item_sku', 'sku', 'style_']),
+        style_name: findCol(['style_name', 'item_name', 'product_name', 'description', 'style_description']),
+        commodity: findCol(['commodity', 'category', 'product_type', 'item_type']),
+        color: findCol(['color', 'colour', 'item_color']),
+        quantity: findCol(['quantity', 'qty', 'ordered_qty', 'units', 'quantity_ordered']),
+        unit_price: findCol(['rate', 'unit_price', 'price', 'item_price']),
+        total_amount: findCol(['total_fcy', 'total_bcy', 'total_amount', 'total', 'amount']),
+        delivery_date: findCol(['so_cancel_date', 'delivery_date', 'ship_date', 'due_date']),
+        status: findCol(['so_status', 'status', 'order_status']),
+        image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
+        po_number: findCol(['purchase_order_number', 'po_number', 'po']),
+        vendor_name: findCol(['vendor_name', 'vendor', 'supplier', 'factory']),
+        po_status: findCol(['po_status', 'purchase_status']),
+        po_quantity: findCol(['po_quantity', 'po_qty']),
+        po_unit_price: findCol(['po_unit_price', 'po_rate']),
+        po_total: findCol(['po_total', 'po_amount']),
+        po_warehouse_date: findCol(['po_warehouse_date', 'warehouse_date', 'eta'])
+    };
+
+    for (var row of rows) {
+        try {
+            var getValue = function(field) {
+                return field && row[field] ? row[field].replace(/^"|"$/g, '').trim() : '';
+            };
+            var getNumber = function(field) {
+                var val = getValue(field).replace(/[,$]/g, '');
+                return parseFloat(val) || 0;
+            };
+            var getDate = function(field) {
+                var val = getValue(field);
+                if (!val) return null;
+                var d = new Date(val);
+                return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+            };
+
+            var soNumber = getValue(mapping.so_number);
+            var customer = getValue(mapping.customer);
+            var styleNumber = getValue(mapping.style_number);
+
+            if (!soNumber || !customer || !styleNumber) continue;
+
+            var styleName = getValue(mapping.style_name) || styleNumber;
+            var commodity = getValue(mapping.commodity) || '';
+            var color = getValue(mapping.color) || '';
+            var quantity = getNumber(mapping.quantity);
+            var unitPrice = getNumber(mapping.unit_price);
+            var totalAmount = getNumber(mapping.total_amount) || (quantity * unitPrice);
+            var deliveryDate = getDate(mapping.delivery_date);
+            var status = getValue(mapping.status) || 'Open';
+            var imageUrl = getValue(mapping.image_url) || '';
+
+            // Normalize status
+            var statusLower = status.toLowerCase();
+            if (statusLower.includes('partial')) status = 'Partial';
+            else if (statusLower.includes('invoice') || statusLower.includes('shipped') || statusLower.includes('complete') || statusLower.includes('billed')) status = 'Invoiced';
+            else status = 'Open';
+
+            // PO data
+            var poNumber = getValue(mapping.po_number);
+            var vendorName = getValue(mapping.vendor_name);
+            var poStatus = getValue(mapping.po_status);
+            var poQuantity = getNumber(mapping.po_quantity);
+            var poUnitPrice = getNumber(mapping.po_unit_price);
+            var poTotal = getNumber(mapping.po_total);
+            var poWarehouseDate = getDate(mapping.po_warehouse_date);
+
+            await pool.query(`
+                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
+
+            imported++;
+        } catch (err) {
+            errors.push('Row: ' + err.message);
+            if (errors.length > 10) break;
+        }
+    }
+
+    // Log import with filename in error_message field (for tracking)
+    await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
+        ['workdrive_sync', 'success', imported, fileName]);
+
+    console.log('WorkDrive sync complete: ' + imported + ' records imported from ' + fileName);
+    return { success: true, imported: imported, fileName: fileName, errors: errors };
+}
+
+// ============================================
 // ZOHO IMAGE FETCHING - Simple direct approach
 // ============================================
 
@@ -1424,6 +1704,199 @@ app.get('/api/zoho-analytics/status', async function(req, res) {
         });
     } catch (err) {
         res.json({ error: err.message });
+    }
+});
+
+// ============================================
+// WORKDRIVE FOLDER SYNC API ENDPOINTS
+// ============================================
+
+// Sync data from WorkDrive folder
+app.post('/api/workdrive/sync', async function(req, res) {
+    try {
+        console.log('Manual WorkDrive folder sync triggered');
+        var result = await syncFromWorkDriveFolder();
+        res.json(result);
+    } catch (err) {
+        console.error('WorkDrive sync error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Get WorkDrive sync status
+app.get('/api/workdrive/status', async function(req, res) {
+    try {
+        var isConfigured = !!(WORKDRIVE_SYNC_FOLDER_ID);
+
+        // Get last sync info
+        var lastSync = await pool.query(
+            "SELECT created_at, records_imported, error_message FROM import_history WHERE import_type = 'workdrive_sync' ORDER BY created_at DESC LIMIT 1"
+        );
+
+        // Check what files are in the folder
+        var folderFiles = [];
+        var latestFileName = null;
+        if (isConfigured) {
+            try {
+                var listResult = await listWorkDriveFolder(WORKDRIVE_SYNC_FOLDER_ID);
+                if (listResult.success) {
+                    folderFiles = listResult.files
+                        .filter(function(f) { return f.attributes && f.attributes.name && f.attributes.name.toLowerCase().endsWith('.csv'); })
+                        .map(function(f) { return { name: f.attributes.name, modified: f.attributes.modified_time }; })
+                        .slice(0, 5);
+                    var latestFile = findLatestCSV(listResult.files);
+                    if (latestFile) {
+                        latestFileName = latestFile.attributes.name;
+                    }
+                }
+            } catch (err) {
+                console.log('Could not list WorkDrive folder:', err.message);
+            }
+        }
+
+        res.json({
+            configured: isConfigured,
+            folderId: WORKDRIVE_SYNC_FOLDER_ID || null,
+            lastSync: lastSync.rows.length > 0 ? lastSync.rows[0].created_at : null,
+            lastSyncRecords: lastSync.rows.length > 0 ? lastSync.rows[0].records_imported : null,
+            lastSyncFile: lastSync.rows.length > 0 ? lastSync.rows[0].error_message : null,
+            latestAvailableFile: latestFileName,
+            recentFiles: folderFiles
+        });
+    } catch (err) {
+        res.json({ error: err.message });
+    }
+});
+
+// List files in WorkDrive folder
+app.get('/api/workdrive/files', async function(req, res) {
+    try {
+        if (!WORKDRIVE_SYNC_FOLDER_ID) {
+            return res.json({ success: false, error: 'WorkDrive folder not configured' });
+        }
+
+        var result = await listWorkDriveFolder(WORKDRIVE_SYNC_FOLDER_ID);
+        if (!result.success) {
+            return res.json(result);
+        }
+
+        // Filter to just CSV files and return relevant info
+        var csvFiles = result.files
+            .filter(function(f) { return f.attributes && f.attributes.name && f.attributes.name.toLowerCase().endsWith('.csv'); })
+            .map(function(f) {
+                return {
+                    id: f.id,
+                    name: f.attributes.name,
+                    modified: f.attributes.modified_time,
+                    size: f.attributes.storage_info ? f.attributes.storage_info.size : null
+                };
+            });
+
+        res.json({ success: true, files: csvFiles });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Browse WorkDrive folders (to help find folder ID)
+app.get('/api/workdrive/browse', async function(req, res) {
+    try {
+        if (!zohoAccessToken) {
+            var tokenResult = await refreshZohoToken(true);
+            if (!tokenResult.success) {
+                return res.json({ success: false, error: 'Failed to get Zoho token' });
+            }
+        }
+
+        var folderId = req.query.folderId;
+
+        // If no folder specified, get team folders (root level)
+        if (!folderId) {
+            // First get the team ID
+            var teamsUrl = 'https://workdrive.zoho.com/api/v1/teams';
+            var teamsRes = await fetch(teamsUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+
+            if (teamsRes.status === 401) {
+                await refreshZohoToken(true);
+                teamsRes = await fetch(teamsUrl, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
+            }
+
+            if (!teamsRes.ok) {
+                return res.json({ success: false, error: 'Failed to get teams: ' + teamsRes.status });
+            }
+
+            var teamsData = await teamsRes.json();
+            var teams = teamsData.data || [];
+
+            if (teams.length === 0) {
+                return res.json({ success: false, error: 'No teams found' });
+            }
+
+            // Get team folders for the first team
+            var teamId = teams[0].id;
+            var teamFoldersUrl = 'https://workdrive.zoho.com/api/v1/teams/' + teamId + '/teamfolders';
+            var foldersRes = await fetch(teamFoldersUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+
+            if (!foldersRes.ok) {
+                return res.json({ success: false, error: 'Failed to get team folders: ' + foldersRes.status });
+            }
+
+            var foldersData = await foldersRes.json();
+            var folders = (foldersData.data || []).map(function(f) {
+                return {
+                    id: f.id,
+                    name: f.attributes ? f.attributes.name : 'Unknown',
+                    type: 'team_folder'
+                };
+            });
+
+            return res.json({ success: true, teamId: teamId, folders: folders, path: '/' });
+        }
+
+        // Browse a specific folder
+        var url = 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files';
+        var response = await fetch(url, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+
+        if (response.status === 401) {
+            await refreshZohoToken(true);
+            response = await fetch(url, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
+
+        if (!response.ok) {
+            return res.json({ success: false, error: 'API error: ' + response.status });
+        }
+
+        var data = await response.json();
+        var items = (data.data || []).map(function(f) {
+            var isFolder = f.attributes && (f.attributes.type === 'folder' || f.type === 'folder');
+            return {
+                id: f.id,
+                name: f.attributes ? f.attributes.name : 'Unknown',
+                type: isFolder ? 'folder' : 'file',
+                modified: f.attributes ? f.attributes.modified_time : null
+            };
+        });
+
+        // Sort folders first, then files
+        items.sort(function(a, b) {
+            if (a.type === 'folder' && b.type !== 'folder') return -1;
+            if (a.type !== 'folder' && b.type === 'folder') return 1;
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        res.json({ success: true, folderId: folderId, items: items });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
     }
 });
 
@@ -2737,6 +3210,25 @@ function getHTML() {
     html += '<button class="btn btn-primary" onclick="syncFromZoho()" id="zohoSyncBtn" style="flex:1">Sync Now</button>';
     html += '</div>';
     html += '<div id="zohoSyncStatus" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    html += '</div>';
+    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
+    // WorkDrive Folder Sync section
+    html += '<div>';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">📁 WorkDrive Folder Sync</label>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Auto-sync from daily CSV files dropped in WorkDrive. This preserves your cached images while updating order data.</p>';
+    html += '<div id="workdriveStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
+    html += '<div id="workdriveStatusText">Checking WorkDrive status...</div>';
+    html += '</div>';
+    html += '<div id="workdriveFolderBrowser" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem;max-height:200px;overflow-y:auto">';
+    html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Browse WorkDrive Folders</div>';
+    html += '<div id="folderBreadcrumb" style="font-size:0.75rem;color:#86868b;margin-bottom:0.5rem"></div>';
+    html += '<div id="folderList"></div>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
+    html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync from WorkDrive</button>';
+    html += '<button class="btn btn-secondary" onclick="toggleFolderBrowser()" id="workdriveBrowseBtn" style="flex:1">📂 Browse Folders</button>';
+    html += '</div>';
+    html += '<div id="workdriveSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
     html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
@@ -4063,6 +4555,7 @@ function getHTML() {
     html += '});';
     html += 'checkTokenStatus();';
     html += 'checkZohoStatus();';
+    html += 'checkWorkDriveStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
@@ -4200,6 +4693,139 @@ function getHTML() {
     html += 'btn.textContent = "Sync Now";';
     html += '}';
     html += '} catch(e) { status.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>"; btn.disabled = false; btn.textContent = "Sync Now"; }';
+    html += '}';
+
+    // WorkDrive folder sync functions
+    html += 'async function checkWorkDriveStatus() {';
+    html += 'var statusEl = document.getElementById("workdriveStatusText");';
+    html += 'if (!statusEl) return;';
+    html += 'statusEl.innerHTML = "Checking WorkDrive folder...";';
+    html += 'try {';
+    html += 'var res = await fetch("/api/workdrive/status");';
+    html += 'var data = await res.json();';
+    html += 'if (data.error) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'return;';
+    html += '}';
+    html += 'if (!data.configured) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">⚠️ Not configured</span><br><span style="font-size:0.75rem;color:#86868b">Set WORKDRIVE_SYNC_FOLDER_ID in environment</span>\';';
+    html += 'document.getElementById("workdriveSyncBtn").disabled = true;';
+    html += 'return;';
+    html += '}';
+    html += 'var html = \'<span style="color:#34c759">✓ Folder connected</span><br>\';';
+    html += 'if (data.latestAvailableFile) {';
+    html += 'html += \'<span style="font-size:0.75rem;color:#1e3a5f">Latest file: \' + data.latestAvailableFile + "</span><br>";';
+    html += '}';
+    html += 'if (data.lastSync) {';
+    html += 'var syncDate = new Date(data.lastSync).toLocaleString();';
+    html += 'html += \'<span style="font-size:0.75rem;color:#86868b">Last sync: \' + syncDate + " (" + (data.lastSyncRecords || 0) + " records)</span><br>";';
+    html += 'if (data.lastSyncFile) {';
+    html += 'html += \'<span style="font-size:0.75rem;color:#86868b">File: \' + data.lastSyncFile + "</span>";';
+    html += '}';
+    html += '} else {';
+    html += 'html += \'<span style="font-size:0.75rem;color:#ff9500">Never synced</span>\';';
+    html += '}';
+    html += 'statusEl.innerHTML = html;';
+    html += '} catch(e) { statusEl.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>"; }';
+    html += '}';
+    html += 'async function syncFromWorkDrive() {';
+    html += 'var btn = document.getElementById("workdriveSyncBtn");';
+    html += 'var result = document.getElementById("workdriveSyncResult");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Syncing...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Fetching latest CSV from WorkDrive...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/workdrive/sync", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'if (data.skipped) {';
+    html += 'result.innerHTML = \'<span style="color:#ff9500">⚠️ \' + data.message + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "🔄 Sync from WorkDrive";';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Imported \' + data.imported + " records from " + data.fileName + "</span>";';
+    html += 'setTimeout(function() { location.reload(); }, 1500);';
+    html += '}';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "🔄 Sync from WorkDrive";';
+    html += '}';
+    html += '} catch(e) {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "🔄 Sync from WorkDrive";';
+    html += '}';
+    html += 'checkWorkDriveStatus();';
+    html += '}';
+
+    // WorkDrive folder browser
+    html += 'var folderHistory = [];';
+    html += 'function toggleFolderBrowser() {';
+    html += 'var browser = document.getElementById("workdriveFolderBrowser");';
+    html += 'if (browser.style.display === "none") {';
+    html += 'browser.style.display = "block";';
+    html += 'folderHistory = [];';
+    html += 'browseFolder(null);';
+    html += '} else {';
+    html += 'browser.style.display = "none";';
+    html += '}';
+    html += '}';
+    html += 'async function browseFolder(folderId) {';
+    html += 'var list = document.getElementById("folderList");';
+    html += 'var breadcrumb = document.getElementById("folderBreadcrumb");';
+    html += 'list.innerHTML = \'<span style="color:#86868b">Loading...</span>\';';
+    html += 'try {';
+    html += 'var url = "/api/workdrive/browse" + (folderId ? "?folderId=" + folderId : "");';
+    html += 'var res = await fetch(url);';
+    html += 'var data = await res.json();';
+    html += 'if (!data.success) {';
+    html += 'list.innerHTML = \'<span style="color:#ff3b30">\' + data.error + "</span>";';
+    html += 'return;';
+    html += '}';
+    html += 'var items = data.folders || data.items || [];';
+    html += 'if (folderId) {';
+    html += 'if (folderHistory.length === 0 || folderHistory[folderHistory.length - 1].id !== folderId) {';
+    html += 'folderHistory.push({ id: folderId, name: "Folder" });';
+    html += '}';
+    html += '}';
+    // Build breadcrumb
+    html += 'breadcrumb.innerHTML = \'<a href="#" onclick="browseFolder(null); folderHistory=[]; return false;" style="color:#007aff">🏠 Root</a>\';';
+    html += 'folderHistory.forEach(function(f, i) {';
+    html += 'breadcrumb.innerHTML += \' / <a href="#" onclick="goToFolder(\' + i + \'); return false;" style="color:#007aff">\' + f.name + "</a>";';
+    html += '});';
+    // Build folder list
+    html += 'list.innerHTML = "";';
+    html += 'if (items.length === 0) {';
+    html += 'list.innerHTML = \'<span style="color:#86868b;font-size:0.75rem">No items found</span>\';';
+    html += 'return;';
+    html += '}';
+    html += 'items.forEach(function(item) {';
+    html += 'var div = document.createElement("div");';
+    html += 'div.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.375rem;cursor:pointer;border-radius:4px;font-size:0.8125rem";';
+    html += 'div.onmouseover = function() { this.style.background = "#f0f4f8"; };';
+    html += 'div.onmouseout = function() { this.style.background = "transparent"; };';
+    html += 'if (item.type === "folder" || item.type === "team_folder") {';
+    html += 'div.innerHTML = \'📁 <span style="flex:1">\' + item.name + \'</span><button onclick="selectFolder(event, \\"\' + item.id + \'\\", \\"\' + item.name.replace(/"/g, \'\') + \'\\")" style="padding:0.25rem 0.5rem;font-size:0.6875rem;background:#007aff;color:#fff;border:none;border-radius:4px;cursor:pointer">Use This</button>\';';
+    html += 'div.onclick = function(e) { if (e.target.tagName !== "BUTTON") { folderHistory.push({ id: item.id, name: item.name }); browseFolder(item.id); } };';
+    html += '} else {';
+    html += 'div.innerHTML = \'📄 <span style="flex:1;color:#86868b">\' + item.name + "</span>";';
+    html += '}';
+    html += 'list.appendChild(div);';
+    html += '});';
+    html += '} catch(e) { list.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>"; }';
+    html += '}';
+    html += 'function goToFolder(index) {';
+    html += 'folderHistory = folderHistory.slice(0, index + 1);';
+    html += 'browseFolder(folderHistory[index].id);';
+    html += '}';
+    html += 'function selectFolder(event, folderId, folderName) {';
+    html += 'event.stopPropagation();';
+    html += 'var result = document.getElementById("workdriveSyncResult");';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Selected folder: \' + folderName + "</span><br>" +';
+    html += '\'<span style="font-size:0.75rem;color:#1e3a5f">Folder ID: <code style="background:#f0f4f8;padding:0.125rem 0.25rem;border-radius:3px">\' + folderId + "</code></span><br>" +';
+    html += '\'<span style="font-size:0.75rem;color:#86868b">Add this to Railway: <code>WORKDRIVE_SYNC_FOLDER_ID=\' + folderId + "</code></span>";';
+    html += 'document.getElementById("workdriveFolderBrowser").style.display = "none";';
     html += '}';
 
     // File upload
