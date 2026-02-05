@@ -2629,12 +2629,13 @@ function getHTML() {
     // Color ranking styles - clean 5-column grid
     html += '.color-ranking-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem}';
     html += '.color-rank-item{display:flex;align-items:center;gap:0.5rem;padding:0.625rem;background:#f8fafc;border-radius:8px;transition:all 0.2s}';
-    html += '.color-rank-item:hover{background:#e8f4fc}';
+    html += '.color-rank-item:hover{background:#e8f4fc;transform:translateY(-1px)}';
     html += '.color-rank-num{font-size:0.75rem;font-weight:600;color:#86868b;min-width:1.25rem}';
+    html += '.color-rank-swatch{width:20px;height:20px;border-radius:4px;flex-shrink:0;border:1px solid rgba(0,0,0,0.1)}';
     html += '.color-rank-name{font-size:0.8125rem;font-weight:600;color:#1e3a5f;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
-    html += '.color-rank-bar-wrap{display:none}';
-    html += '.color-rank-bar{display:none}';
-    html += '.color-rank-value{font-size:0.8125rem;font-weight:600;color:#0088c2}';
+    html += '.color-rank-bar-wrap{flex:1;min-width:60px;height:8px;background:#e5e5e5;border-radius:4px;overflow:hidden}';
+    html += '.color-rank-bar{height:100%;border-radius:4px;transition:width 0.3s}';
+    html += '.color-rank-value{font-size:0.8125rem;font-weight:600;color:#0088c2;min-width:50px;text-align:right}';
     html += '.color-rank-meta{font-size:0.6875rem;color:#86868b;white-space:nowrap}';
     html += '@media(max-width:1200px){.color-ranking-grid{grid-template-columns:repeat(4,1fr)}}';
     html += '@media(max-width:900px){.color-ranking-grid{grid-template-columns:repeat(3,1fr)}}';
@@ -3486,13 +3487,13 @@ function getHTML() {
     html += 'out += \'<div class="color-ranking-grid">\';';
     html += 'colors.forEach(function(c, idx) {';
     html += 'var pct = colorTotal > 0 ? (parseFloat(c.total_dollars)/colorTotal*100) : 0;';
-    html += 'var barWidth = Math.max(pct * 3, 5);'; // Scale for visual
+    html += 'var barWidth = Math.max(pct * 4, 8);'; // Scale for visual - wider bars
     html += 'out += \'<div class="color-rank-item">\';';
     html += 'out += \'<div class="color-rank-num">\' + (idx + 1) + \'</div>\';';
+    html += 'out += \'<div class="color-rank-swatch" style="background:\' + merchColors[idx % merchColors.length] + \'"></div>\';';
     html += 'out += \'<div class="color-rank-name">\' + (c.color || "Unknown") + \'</div>\';';
-    html += 'out += \'<div class="color-rank-bar-wrap"><div class="color-rank-bar" style="width:\' + barWidth + \'%;background:\' + merchColors[idx % merchColors.length] + \'"></div></div>\';';
     html += 'out += \'<div class="color-rank-value">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K</div>\';';
-    html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units · \' + (c.style_count || 0) + \' styles</div>\';';
+    html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units</div>\';';
     html += 'out += \'</div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
