@@ -454,8 +454,8 @@ async function downloadWorkDriveFile(fileId) {
 }
 
 // Sync data from WorkDrive folder
-async function syncFromWorkDriveFolder() {
-    console.log('Starting WorkDrive folder sync...');
+async function syncFromWorkDriveFolder(force) {
+    console.log('Starting WorkDrive folder sync... (force=' + !!force + ')');
 
     if (!WORKDRIVE_SYNC_FOLDER_ID) {
         return { success: false, error: 'WorkDrive folder ID not configured' };
@@ -479,16 +479,20 @@ async function syncFromWorkDriveFolder() {
 
     console.log('Found latest file: ' + fileName + ' (modified: ' + modifiedTime + ')');
 
-    // Check if we already imported this file
-    var lastImport = await pool.query(
-        "SELECT * FROM import_history WHERE import_type = 'workdrive_sync' AND error_message = $1 ORDER BY created_at DESC LIMIT 1",
-        [fileName]
-    );
-    if (lastImport.rows.length > 0) {
-        var lastImportTime = new Date(lastImport.rows[0].created_at);
-        var fileModTime = new Date(modifiedTime);
-        if (fileModTime <= lastImportTime) {
-            return { success: true, message: 'File already imported: ' + fileName, skipped: true };
+    // Check if we already imported this file (skip check if force=true or last import had 0 records)
+    if (!force) {
+        var lastImport = await pool.query(
+            "SELECT * FROM import_history WHERE import_type = 'workdrive_sync' AND error_message = $1 ORDER BY created_at DESC LIMIT 1",
+            [fileName]
+        );
+        if (lastImport.rows.length > 0) {
+            var lastImportTime = new Date(lastImport.rows[0].created_at);
+            var fileModTime = new Date(modifiedTime);
+            var lastRecords = lastImport.rows[0].records_imported || 0;
+            // Skip only if file hasn't changed AND last import actually got records
+            if (fileModTime <= lastImportTime && lastRecords > 0) {
+                return { success: true, message: 'File already imported: ' + fileName, skipped: true };
+            }
         }
     }
 
@@ -1763,8 +1767,9 @@ app.get('/api/zoho-analytics/status', async function(req, res) {
 // Sync data from WorkDrive folder
 app.post('/api/workdrive/sync', async function(req, res) {
     try {
-        console.log('Manual WorkDrive folder sync triggered');
-        var result = await syncFromWorkDriveFolder();
+        var force = req.query.force === 'true' || req.body.force === true;
+        console.log('Manual WorkDrive folder sync triggered (force=' + force + ')');
+        var result = await syncFromWorkDriveFolder(force);
         res.json(result);
     } catch (err) {
         console.error('WorkDrive sync error:', err);
@@ -4871,7 +4876,7 @@ function getHTML() {
     html += 'btn.textContent = "⏳ Syncing...";';
     html += 'result.innerHTML = \'<span style="color:#007aff">Fetching latest CSV from WorkDrive...</span>\';';
     html += 'try {';
-    html += 'var res = await fetch("/api/workdrive/sync", { method: "POST" });';
+    html += 'var res = await fetch("/api/workdrive/sync?force=true", { method: "POST" });';
     html += 'var data = await res.json();';
     html += 'if (data.success) {';
     html += 'if (data.skipped) {';
