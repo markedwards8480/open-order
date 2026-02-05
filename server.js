@@ -336,50 +336,68 @@ async function listWorkDriveFolder(folderId, teamId) {
     var effectiveTeamId = teamId || WORKDRIVE_TEAM_ID;
 
     try {
-        // Try multiple API endpoint formats
-        var urls = [
-            'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files',
-            'https://workdrive.zoho.com/api/v1/teamfolders/' + folderId + '/files'
+        // Try multiple API endpoint formats and header combinations
+        var attempts = [
+            { url: 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files', headers: {} },
+            { url: 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files?page=1&per_page=50', headers: {} },
+            { url: 'https://workdrive.zoho.com/api/v1/teamfolders/' + folderId + '/files', headers: {} },
+            { url: 'https://www.zohoapis.com/workdrive/api/v1/files/' + folderId + '/files', headers: {} },
+            { url: 'https://workdrive.zoho.com/api/v1/files?parent_id=' + folderId, headers: {} }
         ];
+
+        // Add team header variations
+        if (effectiveTeamId) {
+            attempts.forEach(function(a) {
+                a.headers['x-team-id'] = effectiveTeamId;
+            });
+            // Also try with ZWORKDRIVE-TEAMID header
+            attempts.push({
+                url: 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files',
+                headers: { 'ZWORKDRIVE-TEAMID': effectiveTeamId }
+            });
+        }
 
         var response = null;
         var lastError = null;
         var lastErrorText = null;
 
-        for (var urlIdx = 0; urlIdx < urls.length; urlIdx++) {
-            var url = urls[urlIdx];
-            console.log('Listing folder with URL:', url, 'teamId:', effectiveTeamId);
+        for (var i = 0; i < attempts.length; i++) {
+            var attempt = attempts[i];
+            console.log('Trying:', attempt.url);
 
-            var headers = { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken };
-            if (effectiveTeamId) {
-                headers['x-team-id'] = effectiveTeamId;
-            }
+            var headers = Object.assign({ 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }, attempt.headers);
 
-            response = await fetch(url, { headers: headers });
+            response = await fetch(attempt.url, { headers: headers });
 
             if (response.status === 401) {
                 await refreshZohoToken(true);
                 headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
-                response = await fetch(url, { headers: headers });
+                response = await fetch(attempt.url, { headers: headers });
             }
 
             if (response.ok) {
-                console.log('List folder success with:', url);
+                console.log('SUCCESS with:', attempt.url);
                 break;
             } else {
                 lastError = response.status;
-                try { lastErrorText = await response.text(); } catch(e) {}
-                console.log('List folder failed:', response.status, lastErrorText ? lastErrorText.substring(0, 200) : '');
+                try {
+                    lastErrorText = await response.text();
+                    console.log('Failed:', response.status, lastErrorText.substring(0, 300));
+                } catch(e) {
+                    console.log('Failed:', response.status);
+                }
+                response = null; // Reset for next attempt
             }
         }
 
         if (!response || !response.ok) {
-            return { success: false, error: 'WorkDrive API error: ' + lastError };
+            return { success: false, error: 'WorkDrive API error: ' + lastError + (lastErrorText ? ' - ' + lastErrorText.substring(0, 100) : '') };
         }
 
         var data = await response.json();
         return { success: true, files: data.data || [] };
     } catch (err) {
+        console.error('listWorkDriveFolder error:', err);
         return { success: false, error: err.message };
     }
 }
