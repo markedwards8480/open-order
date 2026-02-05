@@ -324,13 +324,16 @@ var WORKDRIVE_SYNC_FOLDER_ID = process.env.WORKDRIVE_SYNC_FOLDER_ID || '';
 var WORKDRIVE_TEAM_ID = process.env.WORKDRIVE_TEAM_ID || '';
 
 // List files in a WorkDrive folder - tries multiple API endpoints
-async function listWorkDriveFolder(folderId) {
+async function listWorkDriveFolder(folderId, teamId) {
     if (!zohoAccessToken) {
         var tokenResult = await refreshZohoToken(true);
         if (!tokenResult.success) {
             return { success: false, error: 'Failed to get Zoho token: ' + tokenResult.error };
         }
     }
+
+    // Use provided teamId or fall back to env variable
+    var effectiveTeamId = teamId || WORKDRIVE_TEAM_ID;
 
     try {
         // Try multiple API endpoint formats
@@ -341,20 +344,23 @@ async function listWorkDriveFolder(folderId) {
 
         var response = null;
         var lastError = null;
+        var lastErrorText = null;
 
         for (var urlIdx = 0; urlIdx < urls.length; urlIdx++) {
             var url = urls[urlIdx];
-            console.log('Listing folder with URL:', url);
+            console.log('Listing folder with URL:', url, 'teamId:', effectiveTeamId);
 
-            response = await fetch(url, {
-                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-            });
+            var headers = { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken };
+            if (effectiveTeamId) {
+                headers['x-team-id'] = effectiveTeamId;
+            }
+
+            response = await fetch(url, { headers: headers });
 
             if (response.status === 401) {
                 await refreshZohoToken(true);
-                response = await fetch(url, {
-                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-                });
+                headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
+                response = await fetch(url, { headers: headers });
             }
 
             if (response.ok) {
@@ -362,7 +368,8 @@ async function listWorkDriveFolder(folderId) {
                 break;
             } else {
                 lastError = response.status;
-                console.log('List folder failed:', response.status);
+                try { lastErrorText = await response.text(); } catch(e) {}
+                console.log('List folder failed:', response.status, lastErrorText ? lastErrorText.substring(0, 200) : '');
             }
         }
 
@@ -1920,6 +1927,9 @@ app.get('/api/workdrive/browse', async function(req, res) {
             });
         }
 
+        // Get team ID from query param or env
+        var teamId = req.query.teamId || WORKDRIVE_TEAM_ID;
+
         // Browse a specific folder - try multiple API formats
         var urls = [
             'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files',
@@ -1932,19 +1942,21 @@ app.get('/api/workdrive/browse', async function(req, res) {
 
         for (var urlIdx = 0; urlIdx < urls.length; urlIdx++) {
             var url = urls[urlIdx];
-            console.log('Trying WorkDrive URL:', url);
+            console.log('Trying WorkDrive URL:', url, 'teamId:', teamId);
 
-            response = await fetch(url, {
-                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-            });
+            var headers = { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken };
+            if (teamId) {
+                headers['x-team-id'] = teamId;
+            }
+
+            response = await fetch(url, { headers: headers });
 
             console.log('Response status:', response.status);
 
             if (response.status === 401) {
                 await refreshZohoToken(true);
-                response = await fetch(url, {
-                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-                });
+                headers['Authorization'] = 'Zoho-oauthtoken ' + zohoAccessToken;
+                response = await fetch(url, { headers: headers });
             }
 
             if (response.ok) {
@@ -3308,14 +3320,24 @@ function getHTML() {
     html += '<div id="workdriveStatusText">Checking WorkDrive status...</div>';
     html += '</div>';
     html += '<div id="workdriveFolderBrowser" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem">';
-    html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Find Your Folder</div>';
-    html += '<div style="font-size:0.75rem;color:#86868b;margin-bottom:0.75rem">Browse folders below, or enter the folder ID manually:</div>';
-    html += '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">';
-    html += '<input type="text" id="manualFolderId" placeholder="Paste folder ID here..." style="flex:1;padding:0.5rem;font-size:0.8125rem;border:1px solid #e5e5e5;border-radius:4px">';
-    html += '<button onclick="testFolderId()" style="padding:0.5rem 0.75rem;font-size:0.75rem;background:#007aff;color:#fff;border:none;border-radius:4px;cursor:pointer">Test</button>';
+    html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Enter Folder Details from URL</div>';
+    html += '<div style="font-size:0.75rem;color:#86868b;margin-bottom:0.75rem">From your WorkDrive URL, copy the IDs:</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">';
+    html += '<div style="display:flex;gap:0.5rem;align-items:center">';
+    html += '<label style="font-size:0.75rem;color:#1e3a5f;min-width:60px">Team ID:</label>';
+    html += '<input type="text" id="manualTeamId" placeholder="f7owk7c2a52496d5749b194f523c32d8fa8c5" style="flex:1;padding:0.5rem;font-size:0.75rem;border:1px solid #e5e5e5;border-radius:4px">';
+    html += '</div>';
+    html += '<div style="display:flex;gap:0.5rem;align-items:center">';
+    html += '<label style="font-size:0.75rem;color:#1e3a5f;min-width:60px">Folder ID:</label>';
+    html += '<input type="text" id="manualFolderId" placeholder="tuxp28e05541e31b84b40a46dbaf132b421e1" style="flex:1;padding:0.5rem;font-size:0.75rem;border:1px solid #e5e5e5;border-radius:4px">';
+    html += '</div>';
+    html += '<button onclick="testFolderId()" style="padding:0.5rem 0.75rem;font-size:0.75rem;background:#007aff;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:0.25rem">Test Connection</button>';
+    html += '</div>';
+    html += '<div style="font-size:0.7rem;color:#86868b;background:#f9f9f9;padding:0.5rem;border-radius:4px;margin-bottom:0.5rem">';
+    html += '<strong>From URL:</strong> workdrive.zoho.com/<span style="color:#007aff">TEAM_ID</span>/teams/.../folders/<span style="color:#34c759">FOLDER_ID</span>';
     html += '</div>';
     html += '<div id="folderBreadcrumb" style="font-size:0.75rem;color:#86868b;margin-bottom:0.5rem"></div>';
-    html += '<div id="folderList" style="max-height:150px;overflow-y:auto"></div>';
+    html += '<div id="folderList" style="max-height:100px;overflow-y:auto"></div>';
     html += '</div>';
     html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
     html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync from WorkDrive</button>';
@@ -4921,21 +4943,25 @@ function getHTML() {
     html += 'document.getElementById("workdriveFolderBrowser").style.display = "none";';
     html += '}';
     html += 'async function testFolderId() {';
-    html += 'var input = document.getElementById("manualFolderId");';
-    html += 'var folderId = input.value.trim();';
+    html += 'var folderId = document.getElementById("manualFolderId").value.trim();';
+    html += 'var teamId = document.getElementById("manualTeamId").value.trim();';
     html += 'if (!folderId) { alert("Please enter a folder ID"); return; }';
     html += 'var list = document.getElementById("folderList");';
-    html += 'list.innerHTML = \'<span style="color:#86868b">Testing folder ID...</span>\';';
+    html += 'list.innerHTML = \'<span style="color:#86868b">Testing connection...</span>\';';
     html += 'try {';
-    html += 'var res = await fetch("/api/workdrive/browse?folderId=" + encodeURIComponent(folderId));';
+    html += 'var url = "/api/workdrive/browse?folderId=" + encodeURIComponent(folderId);';
+    html += 'if (teamId) url += "&teamId=" + encodeURIComponent(teamId);';
+    html += 'var res = await fetch(url);';
     html += 'var data = await res.json();';
     html += 'if (data.success) {';
     html += 'var csvCount = data.items.filter(function(i) { return i.name && i.name.toLowerCase().endsWith(".csv"); }).length;';
-    html += 'list.innerHTML = \'<span style="color:#34c759">✓ Folder found! Contains \' + data.items.length + " items (" + csvCount + " CSV files)</span>";';
+    html += 'list.innerHTML = \'<span style="color:#34c759">✓ Connected! Found \' + data.items.length + " items (" + csvCount + " CSV files)</span>";';
     html += 'var result = document.getElementById("workdriveSyncResult");';
-    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Valid folder ID</span><br>\' +';
-    html += '\'<span style="font-size:0.75rem;color:#1e3a5f">Folder ID: <code style="background:#f0f4f8;padding:0.125rem 0.25rem;border-radius:3px">\' + folderId + "</code></span><br>" +';
-    html += '\'<span style="font-size:0.75rem;color:#86868b">Add to Railway: <code>WORKDRIVE_SYNC_FOLDER_ID=\' + folderId + "</code></span>";';
+    html += 'var envVars = "WORKDRIVE_SYNC_FOLDER_ID=" + folderId;';
+    html += 'if (teamId) envVars += "\\nWORKDRIVE_TEAM_ID=" + teamId;';
+    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Connection successful!</span><br>\' +';
+    html += '\'<span style="font-size:0.75rem;color:#1e3a5f">Add to Railway environment variables:</span><br>\' +';
+    html += '\'<pre style="font-size:0.7rem;background:#f0f4f8;padding:0.5rem;border-radius:4px;margin-top:0.25rem;white-space:pre-wrap">\' + envVars + "</pre>";';
     html += '} else {';
     html += 'list.innerHTML = \'<span style="color:#ff3b30">✗ \' + (data.error || "Could not access folder") + "</span>";';
     html += '}';
