@@ -1810,53 +1810,93 @@ app.get('/api/workdrive/browse', async function(req, res) {
 
         var folderId = req.query.folderId;
 
-        // If no folder specified, get team folders (root level)
+        // If no folder specified, get user's root folders
         if (!folderId) {
-            // First get the team ID
-            var teamsUrl = 'https://workdrive.zoho.com/api/v1/teams';
-            var teamsRes = await fetch(teamsUrl, {
+            // First get current user info to find their team
+            var userUrl = 'https://workdrive.zoho.com/api/v1/users/me';
+            var userRes = await fetch(userUrl, {
                 headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
             });
 
-            if (teamsRes.status === 401) {
+            if (userRes.status === 401) {
                 await refreshZohoToken(true);
-                teamsRes = await fetch(teamsUrl, {
+                userRes = await fetch(userUrl, {
                     headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
                 });
             }
 
-            if (!teamsRes.ok) {
-                return res.json({ success: false, error: 'Failed to get teams: ' + teamsRes.status });
+            console.log('User API status:', userRes.status);
+            var userData = null;
+            var teamId = null;
+
+            if (userRes.ok) {
+                userData = await userRes.json();
+                console.log('User data:', JSON.stringify(userData).substring(0, 500));
+                // Try to extract team ID from user data
+                if (userData.data && userData.data.attributes) {
+                    teamId = userData.data.attributes.team_id;
+                }
             }
 
-            var teamsData = await teamsRes.json();
-            var teams = teamsData.data || [];
+            // If we have a team ID, get team folders
+            if (teamId) {
+                var teamFoldersUrl = 'https://workdrive.zoho.com/api/v1/teams/' + teamId + '/teamfolders';
+                var foldersRes = await fetch(teamFoldersUrl, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
 
-            if (teams.length === 0) {
-                return res.json({ success: false, error: 'No teams found' });
+                if (foldersRes.ok) {
+                    var foldersData = await foldersRes.json();
+                    var folders = (foldersData.data || []).map(function(f) {
+                        return {
+                            id: f.id,
+                            name: f.attributes ? f.attributes.name : 'Unknown',
+                            type: 'team_folder'
+                        };
+                    });
+
+                    return res.json({ success: true, teamId: teamId, folders: folders, path: '/' });
+                }
             }
 
-            // Get team folders for the first team
-            var teamId = teams[0].id;
-            var teamFoldersUrl = 'https://workdrive.zoho.com/api/v1/teams/' + teamId + '/teamfolders';
-            var foldersRes = await fetch(teamFoldersUrl, {
+            // Fallback: try to list all accessible files/folders using search
+            // Or get the user's private space
+            var privateUrl = 'https://workdrive.zoho.com/api/v1/privatespace';
+            var privateRes = await fetch(privateUrl, {
                 headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
             });
 
-            if (!foldersRes.ok) {
-                return res.json({ success: false, error: 'Failed to get team folders: ' + foldersRes.status });
+            if (privateRes.ok) {
+                var privateData = await privateRes.json();
+                console.log('Private space data:', JSON.stringify(privateData).substring(0, 500));
+                if (privateData.data && privateData.data.id) {
+                    // Got private space, list its contents
+                    var psUrl = 'https://workdrive.zoho.com/api/v1/files/' + privateData.data.id + '/files';
+                    var psRes = await fetch(psUrl, {
+                        headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                    });
+
+                    if (psRes.ok) {
+                        var psData = await psRes.json();
+                        var items = (psData.data || []).map(function(f) {
+                            var isFolder = f.attributes && (f.attributes.type === 'folder' || !f.attributes.extension);
+                            return {
+                                id: f.id,
+                                name: f.attributes ? f.attributes.name : 'Unknown',
+                                type: isFolder ? 'folder' : 'file'
+                            };
+                        });
+                        return res.json({ success: true, folders: items, path: '/Private Space', privateSpaceId: privateData.data.id });
+                    }
+                }
             }
 
-            var foldersData = await foldersRes.json();
-            var folders = (foldersData.data || []).map(function(f) {
-                return {
-                    id: f.id,
-                    name: f.attributes ? f.attributes.name : 'Unknown',
-                    type: 'team_folder'
-                };
+            // Last resort: return instructions for manual folder ID entry
+            return res.json({
+                success: false,
+                error: 'Could not browse folders automatically. Please find the folder in WorkDrive, copy the folder ID from the URL (after /folder/), and enter it manually.',
+                hint: 'The folder ID looks like: ly8za0b5f93e4b9e5462b9e0c4a9f2e8b9c0d'
             });
-
-            return res.json({ success: true, teamId: teamId, folders: folders, path: '/' });
         }
 
         // Browse a specific folder
@@ -1878,7 +1918,7 @@ app.get('/api/workdrive/browse', async function(req, res) {
 
         var data = await response.json();
         var items = (data.data || []).map(function(f) {
-            var isFolder = f.attributes && (f.attributes.type === 'folder' || f.type === 'folder');
+            var isFolder = f.attributes && (f.attributes.type === 'folder' || !f.attributes.extension);
             return {
                 id: f.id,
                 name: f.attributes ? f.attributes.name : 'Unknown',
@@ -1896,6 +1936,7 @@ app.get('/api/workdrive/browse', async function(req, res) {
 
         res.json({ success: true, folderId: folderId, items: items });
     } catch (err) {
+        console.error('Browse error:', err);
         res.json({ success: false, error: err.message });
     }
 });
@@ -3219,10 +3260,15 @@ function getHTML() {
     html += '<div id="workdriveStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
     html += '<div id="workdriveStatusText">Checking WorkDrive status...</div>';
     html += '</div>';
-    html += '<div id="workdriveFolderBrowser" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem;max-height:200px;overflow-y:auto">';
-    html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Browse WorkDrive Folders</div>';
+    html += '<div id="workdriveFolderBrowser" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem">';
+    html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Find Your Folder</div>';
+    html += '<div style="font-size:0.75rem;color:#86868b;margin-bottom:0.75rem">Browse folders below, or enter the folder ID manually:</div>';
+    html += '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">';
+    html += '<input type="text" id="manualFolderId" placeholder="Paste folder ID here..." style="flex:1;padding:0.5rem;font-size:0.8125rem;border:1px solid #e5e5e5;border-radius:4px">';
+    html += '<button onclick="testFolderId()" style="padding:0.5rem 0.75rem;font-size:0.75rem;background:#007aff;color:#fff;border:none;border-radius:4px;cursor:pointer">Test</button>';
+    html += '</div>';
     html += '<div id="folderBreadcrumb" style="font-size:0.75rem;color:#86868b;margin-bottom:0.5rem"></div>';
-    html += '<div id="folderList"></div>';
+    html += '<div id="folderList" style="max-height:150px;overflow-y:auto"></div>';
     html += '</div>';
     html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
     html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync from WorkDrive</button>';
@@ -4826,6 +4872,27 @@ function getHTML() {
     html += '\'<span style="font-size:0.75rem;color:#1e3a5f">Folder ID: <code style="background:#f0f4f8;padding:0.125rem 0.25rem;border-radius:3px">\' + folderId + "</code></span><br>" +';
     html += '\'<span style="font-size:0.75rem;color:#86868b">Add this to Railway: <code>WORKDRIVE_SYNC_FOLDER_ID=\' + folderId + "</code></span>";';
     html += 'document.getElementById("workdriveFolderBrowser").style.display = "none";';
+    html += '}';
+    html += 'async function testFolderId() {';
+    html += 'var input = document.getElementById("manualFolderId");';
+    html += 'var folderId = input.value.trim();';
+    html += 'if (!folderId) { alert("Please enter a folder ID"); return; }';
+    html += 'var list = document.getElementById("folderList");';
+    html += 'list.innerHTML = \'<span style="color:#86868b">Testing folder ID...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/workdrive/browse?folderId=" + encodeURIComponent(folderId));';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'var csvCount = data.items.filter(function(i) { return i.name && i.name.toLowerCase().endsWith(".csv"); }).length;';
+    html += 'list.innerHTML = \'<span style="color:#34c759">✓ Folder found! Contains \' + data.items.length + " items (" + csvCount + " CSV files)</span>";';
+    html += 'var result = document.getElementById("workdriveSyncResult");';
+    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Valid folder ID</span><br>\' +';
+    html += '\'<span style="font-size:0.75rem;color:#1e3a5f">Folder ID: <code style="background:#f0f4f8;padding:0.125rem 0.25rem;border-radius:3px">\' + folderId + "</code></span><br>" +';
+    html += '\'<span style="font-size:0.75rem;color:#86868b">Add to Railway: <code>WORKDRIVE_SYNC_FOLDER_ID=\' + folderId + "</code></span>";';
+    html += '} else {';
+    html += 'list.innerHTML = \'<span style="color:#ff3b30">✗ \' + (data.error || "Could not access folder") + "</span>";';
+    html += '}';
+    html += '} catch(e) { list.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>"; }';
     html += '}';
 
     // File upload
