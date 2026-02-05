@@ -1414,21 +1414,25 @@ app.get('/api/filters', async function(req, res) {
 // Get PO filters (vendors, commodities for PO view)
 app.get('/api/po/filters', async function(req, res) {
     try {
+        var statusFilter = req.query.status || 'Open';
+        var statusCondition = statusFilter === 'All' ? '1=1' : 'po_status = $1';
+        var statusParams = statusFilter === 'All' ? [] : [statusFilter];
+
         var vendorsResult = await pool.query(`
             SELECT vendor_name, COUNT(DISTINCT po_number) as po_count, SUM(po_total) as total_dollars
             FROM order_items
-            WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_status = 'Open'
+            WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
             GROUP BY vendor_name
             ORDER BY vendor_name
-        `);
+        `, statusParams);
 
         var commoditiesResult = await pool.query(`
             SELECT commodity, COUNT(DISTINCT style_number) as style_count
             FROM order_items
-            WHERE po_status = 'Open' AND commodity IS NOT NULL AND commodity != ''
+            WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
             GROUP BY commodity
             ORDER BY commodity
-        `);
+        `, statusParams);
 
         res.json({
             vendors: vendorsResult.rows,
@@ -1446,9 +1450,9 @@ app.get('/api/po/orders', async function(req, res) {
         var params = [];
         var paramIndex = 1;
 
-        // Vendor filter
+        // Vendor filter (use || separator to avoid issues with commas in vendor names)
         if (req.query.vendors) {
-            var vendors = req.query.vendors.split(',');
+            var vendors = req.query.vendors.split('||');
             conditions.push('vendor_name IN (' + vendors.map(() => '$' + paramIndex++).join(',') + ')');
             params.push(...vendors);
         }
@@ -2066,7 +2070,7 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
             vendor_name: findColumn(headers, ['vendor_name', 'vendor', 'supplier', 'factory']),
             po_status: findColumn(headers, ['po_status', 'purchase_status']),
             po_quantity: findColumn(headers, ['po_quantity', 'po_qty']),
-            po_unit_price: findColumn(headers, ['po_price', 'po_unit_price', 'po_price_fcy']),
+            po_unit_price: findColumn(headers, ['po_price_fcy', 'po_unit_price', 'po_price']),
             po_total: findColumn(headers, ['po_total_fcy', 'po_total', 'po_amount']),
             po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse'])
         };
@@ -2928,7 +2932,7 @@ function getHTML() {
     html += '.filter-select{padding:0.5rem 2rem 0.5rem 1rem;border:1px solid #d2d2d7;border-radius:8px;font-size:0.875rem;background:white;color:#1e3a5f;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%2386868b\' d=\'M6 8L2 4h8z\'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.75rem center}.filter-select:focus{outline:none;border-color:#0088c2}';
     html += '.filter-select.active{border-color:#0088c2;background-color:rgba(0,136,194,0.05)}';
     html += '.status-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px}.status-btn{padding:0.5rem 1.25rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}';
-    html += '.status-btn.active{color:white}.status-btn[data-status="Open"].active{background:#34c759}.status-btn[data-status="Invoiced"].active{background:#8e8e93}.status-btn[data-status="All"].active{background:#0088c2}';
+    html += '.status-btn.active{color:white}.status-btn[data-status="Open"].active{background:#34c759}.status-btn[data-status="Invoiced"].active{background:#8e8e93}.status-btn[data-status="Received"].active{background:#8e8e93}.status-btn[data-status="All"].active{background:#0088c2}';
     html += '.clear-filters{padding:0.5rem 1rem;border:none;background:transparent;color:#ff3b30;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:6px}.clear-filters:hover{background:rgba(255,59,48,0.1)}';
     html += '.view-toggle{display:flex;background:#f0f4f8;border-radius:980px;padding:3px;margin-left:auto}.view-btn{padding:0.5rem 1rem;border:none;background:transparent;cursor:pointer;font-size:0.8125rem;font-weight:500;border-radius:980px;transition:all 0.2s;color:#6e6e73}.view-btn.active{background:#1e3a5f;color:white}';
 
@@ -3438,7 +3442,8 @@ function getHTML() {
     html += 'try {';
     html += 'var params = new URLSearchParams();';
     html += 'if (state.mode === "po") {';
-    // PO mode
+    // PO mode - pass vendor filter (stored in state.filters.customers when in PO mode)
+    html += 'if (state.filters.customers.length > 0) params.append("vendors", state.filters.customers.join("||"));';
     html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
     html += 'params.append("status", state.filters.poStatus || "Open");';
     html += 'var res = await fetch("/api/po/orders?" + params.toString());';
@@ -4972,6 +4977,21 @@ function getHTML() {
     html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Vendors";';
     html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
     html += 'document.querySelectorAll(".status-btn")[1].textContent = "Received";';
+    html += 'document.querySelectorAll(".status-btn")[1].dataset.status = "Received";';
+    // Update Customer label to Vendor and load vendor data
+    html += 'var custLabel = document.querySelector("#customerMultiSelect").closest(".filter-group").querySelector(".filter-label");';
+    html += 'if (custLabel) custLabel.textContent = "Vendor";';
+    html += 'document.getElementById("customerDisplay").textContent = "All Vendors";';
+    html += 'state.filters.customers = [];';
+    // Load vendor list from PO filters
+    html += 'fetch("/api/po/filters?status=" + (state.filters.poStatus || "Open")).then(function(r) { return r.json(); }).then(function(pf) {';
+    html += 'populateMultiSelect("customer", pf.vendors.map(function(v) { return { value: v.vendor_name, label: v.vendor_name + " (" + v.po_count + " POs)" }; }), "All Vendors");';
+    html += 'populateMultiSelect("commodity", pf.commodities.map(function(c) { return { value: c.commodity, label: c.commodity + " (" + c.style_count + ")" }; }), "All Commodities");';
+    html += '}).catch(function(e) { console.error("Error loading PO filters:", e); });';
+    // Hide year/FY/month filters (not relevant for PO mode - uses warehouse date timeline)
+    html += 'document.getElementById("yearMultiSelect") && (document.getElementById("yearMultiSelect").closest(".filter-group").style.display = "none");';
+    html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "none");';
+    html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "none");';
     // Update view toggle for PO mode
     html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button>\';';
     html += 'bindViewToggle();';
@@ -4981,9 +5001,20 @@ function getHTML() {
     html += 'document.getElementById("statCustomers").parentElement.querySelector(".stat-label").textContent = "Customers";';
     html += 'document.querySelectorAll(".status-btn")[0].textContent = "Open";';
     html += 'document.querySelectorAll(".status-btn")[1].textContent = "Invoiced";';
+    html += 'document.querySelectorAll(".status-btn")[1].dataset.status = "Invoiced";';
+    // Restore Customer label and reload customer data
+    html += 'var custLabel = document.querySelector("#customerMultiSelect").closest(".filter-group").querySelector(".filter-label");';
+    html += 'if (custLabel) custLabel.textContent = "Customer";';
+    html += 'document.getElementById("customerDisplay").textContent = "All Customers";';
+    html += 'state.filters.customers = [];';
+    // Show year/FY/month filters again
+    html += 'document.getElementById("yearMultiSelect") && (document.getElementById("yearMultiSelect").closest(".filter-group").style.display = "");';
+    html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "");';
+    html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "");';
     // Restore view toggle for Sales mode
     html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button>\';';
     html += 'bindViewToggle();';
+    html += 'loadFilters();';
     html += '}';
     html += 'loadData();';
     html += '}';
@@ -5001,7 +5032,7 @@ function getHTML() {
     // Status toggle
     html += 'document.querySelectorAll(".status-btn").forEach(function(btn) { btn.addEventListener("click", function() {';
     html += 'document.querySelectorAll(".status-btn").forEach(function(b) { b.classList.remove("active"); });';
-    html += 'btn.classList.add("active"); state.filters.status = btn.dataset.status; loadData(); }); });';
+    html += 'btn.classList.add("active"); if (state.mode === "po") { state.filters.poStatus = btn.dataset.status; } else { state.filters.status = btn.dataset.status; } loadData(); }); });';
 
     // View toggle
     html += 'document.querySelectorAll(".view-btn").forEach(function(btn) { btn.addEventListener("click", function() {';
