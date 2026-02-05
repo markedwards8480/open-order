@@ -323,7 +323,7 @@ async function syncFromZohoAnalytics() {
 var WORKDRIVE_SYNC_FOLDER_ID = process.env.WORKDRIVE_SYNC_FOLDER_ID || '';
 var WORKDRIVE_TEAM_ID = process.env.WORKDRIVE_TEAM_ID || '';
 
-// List files in a WorkDrive folder
+// List files in a WorkDrive folder - tries multiple API endpoints
 async function listWorkDriveFolder(folderId) {
     if (!zohoAccessToken) {
         var tokenResult = await refreshZohoToken(true);
@@ -333,20 +333,41 @@ async function listWorkDriveFolder(folderId) {
     }
 
     try {
-        var url = 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files';
-        var response = await fetch(url, {
-            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-        });
+        // Try multiple API endpoint formats
+        var urls = [
+            'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files',
+            'https://workdrive.zoho.com/api/v1/teamfolders/' + folderId + '/files'
+        ];
 
-        if (response.status === 401) {
-            await refreshZohoToken(true);
+        var response = null;
+        var lastError = null;
+
+        for (var urlIdx = 0; urlIdx < urls.length; urlIdx++) {
+            var url = urls[urlIdx];
+            console.log('Listing folder with URL:', url);
+
             response = await fetch(url, {
                 headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
             });
+
+            if (response.status === 401) {
+                await refreshZohoToken(true);
+                response = await fetch(url, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
+            }
+
+            if (response.ok) {
+                console.log('List folder success with:', url);
+                break;
+            } else {
+                lastError = response.status;
+                console.log('List folder failed:', response.status);
+            }
         }
 
-        if (!response.ok) {
-            return { success: false, error: 'WorkDrive API error: ' + response.status };
+        if (!response || !response.ok) {
+            return { success: false, error: 'WorkDrive API error: ' + lastError };
         }
 
         var data = await response.json();
@@ -1899,21 +1920,47 @@ app.get('/api/workdrive/browse', async function(req, res) {
             });
         }
 
-        // Browse a specific folder
-        var url = 'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files';
-        var response = await fetch(url, {
-            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
-        });
+        // Browse a specific folder - try multiple API formats
+        var urls = [
+            'https://workdrive.zoho.com/api/v1/files/' + folderId + '/files',
+            'https://workdrive.zoho.com/api/v1/teamfolders/' + folderId + '/files'
+        ];
 
-        if (response.status === 401) {
-            await refreshZohoToken(true);
+        var response = null;
+        var lastError = null;
+        var responseText = null;
+
+        for (var urlIdx = 0; urlIdx < urls.length; urlIdx++) {
+            var url = urls[urlIdx];
+            console.log('Trying WorkDrive URL:', url);
+
             response = await fetch(url, {
                 headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
             });
+
+            console.log('Response status:', response.status);
+
+            if (response.status === 401) {
+                await refreshZohoToken(true);
+                response = await fetch(url, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
+            }
+
+            if (response.ok) {
+                console.log('Success with URL:', url);
+                break;
+            } else {
+                lastError = response.status;
+                try {
+                    responseText = await response.text();
+                    console.log('Error response:', responseText.substring(0, 200));
+                } catch(e) {}
+            }
         }
 
-        if (!response.ok) {
-            return res.json({ success: false, error: 'API error: ' + response.status });
+        if (!response || !response.ok) {
+            return res.json({ success: false, error: 'API error: ' + lastError + '. The folder may require different permissions.' });
         }
 
         var data = await response.json();
