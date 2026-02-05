@@ -560,8 +560,8 @@ async function syncFromWorkDriveFolder() {
         commodity: findCol(['commodity', 'category', 'product_type', 'item_type']),
         color: findCol(['color', 'colour', 'item_color']),
         quantity: findCol(['quantity', 'qty', 'ordered_qty', 'units', 'quantity_ordered']),
-        unit_price: findCol(['so_price_bcy', 'so_price_fcy', 'rate', 'unit_price', 'price', 'item_price']),
-        total_amount: findCol(['total_bcy', 'total_fcy', 'total_amount', 'total', 'amount']),
+        unit_price: findCol(['so_price_fcy', 'rate', 'unit_price', 'price', 'item_price']),
+        total_amount: findCol(['total_fcy', 'total_amount', 'total', 'amount']),
         delivery_date: findCol(['so_cancel_date', 'delivery_date', 'ship_date', 'due_date']),
         status: findCol(['so_status', 'status', 'order_status']),
         image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
@@ -569,8 +569,8 @@ async function syncFromWorkDriveFolder() {
         vendor_name: findCol(['vendor_name', 'vendor', 'supplier', 'factory']),
         po_status: findCol(['po_status', 'purchase_status']),
         po_quantity: findCol(['po_quantity', 'po_qty']),
-        po_unit_price: findCol(['po_price_bcy', 'po_price_fcy', 'po_unit_price', 'po_rate']),
-        po_total: findCol(['po_total_bcy', 'po_total_fcy', 'po_total', 'po_amount']),
+        po_unit_price: findCol(['po_price_fcy', 'po_unit_price', 'po_rate']),
+        po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
         po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta'])
     };
 
