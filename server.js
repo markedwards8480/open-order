@@ -3326,19 +3326,6 @@ function getHTML() {
     html += '</div>';
     html += '</div>';
     html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
-    html += '<div>';
-    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Zoho Analytics Sync</label>';
-    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Sync order data directly from Zoho Analytics instead of uploading CSV files.</p>';
-    html += '<div id="zohoStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
-    html += '<span id="zohoConnectionStatus">Checking connection...</span>';
-    html += '</div>';
-    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
-    html += '<button class="btn btn-secondary" onclick="connectZoho()" id="zohoConnectBtn" style="flex:1">Connect to Zoho</button>';
-    html += '<button class="btn btn-primary" onclick="syncFromZoho()" id="zohoSyncBtn" style="flex:1">Sync Now</button>';
-    html += '</div>';
-    html += '<div id="zohoSyncStatus" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
-    html += '</div>';
-    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
     // WorkDrive Folder Sync section
     html += '<div>';
     html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">📁 WorkDrive Folder Sync</label>';
@@ -4696,7 +4683,6 @@ function getHTML() {
     html += 'if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear;';
     html += '});';
     html += 'checkTokenStatus();';
-    html += 'checkZohoStatus();';
     html += 'checkWorkDriveStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
@@ -4791,50 +4777,6 @@ function getHTML() {
     html += '} catch(e) { status.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
     html += 'btn.disabled = false;';
     html += 'btn.textContent = "🔄 Refresh Token";';
-    html += '}';
-
-    // Zoho Analytics sync functions
-    html += 'async function checkZohoStatus() {';
-    html += 'var statusEl = document.getElementById("zohoConnectionStatus");';
-    html += 'var connectBtn = document.getElementById("zohoConnectBtn");';
-    html += 'var syncBtn = document.getElementById("zohoSyncBtn");';
-    html += 'try {';
-    html += 'var res = await fetch("/api/zoho-analytics/status");';
-    html += 'var data = await res.json();';
-    html += 'if (data.connected) {';
-    html += 'statusEl.innerHTML = \'<span style="color:#34c759">Connected to Zoho Analytics</span>\';';
-    html += 'connectBtn.textContent = "Reconnect";';
-    html += 'syncBtn.disabled = false;';
-    html += 'if (data.lastSync) { document.getElementById("zohoSyncStatus").textContent = "Last sync: " + new Date(data.lastSync).toLocaleString(); }';
-    html += '} else {';
-    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">Not connected</span>\';';
-    html += 'connectBtn.textContent = "Connect to Zoho";';
-    html += 'syncBtn.disabled = true;';
-    html += '}';
-    html += '} catch(e) { statusEl.innerHTML = \'<span style="color:#ff3b30">Error checking status</span>\'; }';
-    html += '}';
-    html += 'function connectZoho() {';
-    html += 'window.open("/api/zoho/connect", "_blank", "width=600,height=700");';
-    html += '}';
-    html += 'var zohoSyncInterval = null;';
-    html += 'async function syncFromZoho() {';
-    html += 'var btn = document.getElementById("zohoSyncBtn");';
-    html += 'var status = document.getElementById("zohoSyncStatus");';
-    html += 'btn.disabled = true;';
-    html += 'btn.textContent = "Syncing...";';
-    html += 'status.innerHTML = \'<span style="color:#007aff">Fetching data from Zoho Analytics...</span>\';';
-    html += 'try {';
-    html += 'var res = await fetch("/api/zoho-analytics/sync", { method: "POST" });';
-    html += 'var data = await res.json();';
-    html += 'if (data.success) {';
-    html += 'status.innerHTML = \'<span style="color:#34c759">Synced \' + data.rowCount + " orders from Zoho!</span>";';
-    html += 'setTimeout(function() { location.reload(); }, 1500);';
-    html += '} else {';
-    html += 'status.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
-    html += 'btn.disabled = false;';
-    html += 'btn.textContent = "Sync Now";';
-    html += '}';
-    html += '} catch(e) { status.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>"; btn.disabled = false; btn.textContent = "Sync Now"; }';
     html += '}';
 
     // WorkDrive folder sync functions
