@@ -2,6 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const multer = require('multer');
 const session = require('express-session');
+const cron = require('node-cron');
 require('dotenv').config();
 
 // All data is stored server-side in PostgreSQL:
@@ -5183,6 +5184,33 @@ function getHTML() {
 initDB().then(function() {
     app.listen(PORT, function() {
         console.log('Mark Edwards Open Orders Dashboard running on port ' + PORT);
+
+        // Schedule automatic WorkDrive sync at 3 AM daily (server timezone)
+        if (WORKDRIVE_SYNC_FOLDER_ID) {
+            cron.schedule('0 3 * * *', async function() {
+                console.log('=== SCHEDULED WORKDRIVE SYNC STARTING (3 AM) ===');
+                try {
+                    var result = await syncFromWorkDriveFolder(false); // Don't force - only sync if file changed
+                    if (result.success) {
+                        if (result.skipped) {
+                            console.log('Scheduled sync: No new file to import');
+                        } else {
+                            console.log('Scheduled sync: Imported ' + result.imported + ' records from ' + result.fileName);
+                        }
+                    } else {
+                        console.error('Scheduled sync failed:', result.error);
+                    }
+                } catch (err) {
+                    console.error('Scheduled sync error:', err);
+                }
+                console.log('=== SCHEDULED WORKDRIVE SYNC COMPLETE ===');
+            }, {
+                timezone: 'America/New_York' // Eastern Time
+            });
+            console.log('WorkDrive auto-sync scheduled for 3 AM ET daily');
+        } else {
+            console.log('WorkDrive auto-sync not enabled (no folder ID configured)');
+        }
     });
 });
 // Deploy trigger Wed Feb  4 20:10:44 UTC 2026
