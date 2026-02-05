@@ -1705,7 +1705,7 @@ app.get('/api/zoho/callback', async function(req, res) {
 app.get('/api/zoho/connect', function(req, res) {
     var clientId = process.env.ZOHO_CLIENT_ID;
     var redirectUri = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho/callback';
-    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL';
+    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL,WorkDrive.workspace.ALL,WorkDrive.folders.ALL,WorkDrive.folders.READ';
     var authUrl = 'https://accounts.zoho.com/oauth/v2/auth?scope=' + scope + '&client_id=' + clientId + '&response_type=code&access_type=offline&redirect_uri=' + encodeURIComponent(redirectUri) + '&prompt=consent';
     res.redirect(authUrl);
 });
