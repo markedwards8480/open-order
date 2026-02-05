@@ -2752,6 +2752,9 @@ function getHTML() {
     // State
     html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {} };';
 
+    // Store all months for filtering
+    html += 'var allMonths = [];';
+
     // Load filters
     html += 'async function loadFilters() {';
     html += 'try { var res = await fetch("/api/filters"); var data = await res.json();';
@@ -2766,11 +2769,46 @@ function getHTML() {
     html += 'populateMultiSelect("fy", data.fiscalYears.map(function(fy) { return { value: fy, label: "FY" + fy }; }), "All FY");';
     // Customer multi-select
     html += 'populateMultiSelect("customer", data.customers.map(function(c) { return { value: c.customer, label: c.customer + " (" + c.order_count + ")" }; }), "All Customers");';
-    // Month multi-select
-    html += 'populateMultiSelect("month", data.months.map(function(m) { return { value: m.month, label: m.display_name }; }), "All Months");';
+    // Store all months for contextual filtering
+    html += 'allMonths = data.months || [];';
+    // Month multi-select - initially show all
+    html += 'populateMultiSelect("month", allMonths.map(function(m) { return { value: m.month, label: m.display_name }; }), "All Months");';
     // Commodity multi-select
     html += 'populateMultiSelect("commodity", data.commodities.map(function(c) { return { value: c.commodity, label: c.commodity + " (" + c.style_count + ")" }; }), "All Commodities");';
     html += '} catch(e) { console.error("Error loading filters:", e); }}';
+
+    // Filter months based on selected FY/Year
+    html += 'function filterMonthsDropdown() {';
+    html += 'var filteredMonths = allMonths;';
+    // Filter by fiscal year if selected
+    html += 'if (state.filters.fiscalYears.length > 0) {';
+    html += 'filteredMonths = allMonths.filter(function(m) {';
+    html += 'var parts = m.month.split("-");';
+    html += 'var year = parseInt(parts[0]);';
+    html += 'var month = parseInt(parts[1]);';
+    // FY runs June (prev year) to May (FY year) - e.g. FY2026 = June 2025 - May 2026
+    html += 'return state.filters.fiscalYears.some(function(fy) {';
+    html += 'var fyStart = new Date(fy - 1, 5, 1);'; // June 1 of previous year
+    html += 'var fyEnd = new Date(fy, 4, 31);'; // May 31 of FY year
+    html += 'var monthDate = new Date(year, month - 1, 15);';
+    html += 'return monthDate >= fyStart && monthDate <= fyEnd;';
+    html += '});';
+    html += '});';
+    html += '}';
+    // Filter by calendar year if selected (and no FY selected)
+    html += 'else if (state.filters.years.length > 0) {';
+    html += 'filteredMonths = allMonths.filter(function(m) {';
+    html += 'var year = parseInt(m.month.split("-")[0]);';
+    html += 'return state.filters.years.indexOf(year) !== -1;';
+    html += '});';
+    html += '}';
+    // Re-populate the dropdown
+    html += 'populateMultiSelect("month", filteredMonths.map(function(m) { return { value: m.month, label: m.display_name }; }), "All Months");';
+    // Clear selected months that are no longer in the filtered list
+    html += 'var validMonths = filteredMonths.map(function(m) { return m.month; });';
+    html += 'state.filters.months = state.filters.months.filter(function(m) { return validMonths.indexOf(m) !== -1; });';
+    html += 'if (state.filters.months.length === 0) { document.getElementById("monthDisplay").textContent = "All Months"; document.querySelector("#monthMultiSelect .multi-select-display").classList.remove("active"); }';
+    html += '}';
 
     // Load data
     html += 'async function loadData() {';
@@ -3895,6 +3933,8 @@ function getHTML() {
     html += 'if (values.length === 0) { display.textContent = defaultLabel; if (displayEl) displayEl.classList.remove("active"); }';
     html += 'else if (values.length === 1) { display.textContent = values[0]; if (displayEl) displayEl.classList.add("active"); }';
     html += 'else { display.textContent = values.length + " selected"; if (displayEl) displayEl.classList.add("active"); }';
+    // When FY or Year changes, filter the months dropdown
+    html += 'if (type === "fy" || type === "year") { filterMonthsDropdown(); }';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
@@ -4243,6 +4283,8 @@ function getHTML() {
     html += 'if (display) display.textContent = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All Customers";';
     html += 'if (displayEl) displayEl.classList.remove("active");';
     html += '});';
+    // Reset months dropdown to show all months
+    html += 'filterMonthsDropdown();';
     html += 'updateClearButton(); loadData(); }';
     html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0;';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
