@@ -4082,6 +4082,36 @@ function getHTML() {
     // Merchandising view
     html += 'var merchColors = ["#0088c2","#34c759","#ff9500","#ff3b30","#af52de","#5ac8fa","#ffcc00","#ff2d55","#8e8e93","#5856d6","#ff6961","#77dd77","#aec6cf","#fdfd96","#1e3a5f"];';
 
+    // Color name to CSS color mapping for swatches
+    html += 'function getColorSwatch(colorName) {';
+    html += 'var name = (colorName || "").toUpperCase().trim();';
+    html += 'var colorMap = {';
+    html += '"PINK": "#FFB6C1", "HOT PINK": "#FF69B4", "LIGHT PINK": "#FFB6C1", "DUSTY PINK": "#D4A5A5", "BLUSH": "#DE5D83", "ROSE": "#FF007F", "CORAL PINK": "#F88379",';
+    html += '"RED": "#DC143C", "BURGUNDY": "#800020", "WINE": "#722F37", "MAROON": "#800000", "CRIMSON": "#DC143C", "SCARLET": "#FF2400",';
+    html += '"ORANGE": "#FF8C00", "CORAL": "#FF7F50", "PEACH": "#FFCBA4", "TANGERINE": "#FF9966", "RUST": "#B7410E", "BURNT ORANGE": "#CC5500",';
+    html += '"YELLOW": "#FFD700", "GOLD": "#FFD700", "MUSTARD": "#FFDB58", "LEMON": "#FFF44F", "CREAM": "#FFFDD0", "IVORY": "#FFFFF0", "CHAMPAGNE": "#F7E7CE",';
+    html += '"GREEN": "#228B22", "OLIVE": "#808000", "SAGE": "#9DC183", "MINT": "#98FF98", "LIME": "#32CD32", "EMERALD": "#50C878", "FOREST": "#228B22", "HUNTER": "#355E3B", "KELLY": "#4CBB17", "TEAL": "#008080", "SEAFOAM": "#93E9BE",';
+    html += '"BLUE": "#4169E1", "NAVY": "#000080", "ROYAL": "#4169E1", "COBALT": "#0047AB", "SKY": "#87CEEB", "BABY BLUE": "#89CFF0", "POWDER BLUE": "#B0E0E6", "LIGHT BLUE": "#ADD8E6", "DENIM": "#1560BD", "INDIGO": "#4B0082",';
+    html += '"PURPLE": "#800080", "LAVENDER": "#E6E6FA", "LILAC": "#C8A2C8", "VIOLET": "#8F00FF", "PLUM": "#DDA0DD", "MAUVE": "#E0B0FF", "MAGENTA": "#FF00FF", "FUCHSIA": "#FF00FF", "ORCHID": "#DA70D6", "EGGPLANT": "#614051",';
+    html += '"BROWN": "#8B4513", "TAN": "#D2B48C", "BEIGE": "#F5F5DC", "KHAKI": "#C3B091", "CAMEL": "#C19A6B", "CHOCOLATE": "#7B3F00", "COFFEE": "#6F4E37", "TAUPE": "#483C32", "MOCHA": "#967969",';
+    html += '"BLACK": "#1a1a1a", "CHARCOAL": "#36454F", "GREY": "#808080", "GRAY": "#808080", "SILVER": "#C0C0C0", "HEATHER": "#B6B095", "HEATHER GREY": "#9E9E9E", "ASH": "#B2BEB5",';
+    html += '"WHITE": "#FFFFFF", "OFF WHITE": "#FAF9F6", "SNOW": "#FFFAFA", "NATURAL": "#FAF0E6", "OATMEAL": "#E6DDD1", "ECRU": "#C2B280",';
+    html += '"LEOPARD": "#C69B5F", "ANIMAL": "#C69B5F", "CAMO": "#78866B", "CAMOUFLAGE": "#78866B", "TIE DYE": "linear-gradient(135deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3)", "FLORAL": "#FF69B4", "STRIPE": "repeating-linear-gradient(90deg, #1a1a1a, #1a1a1a 3px, #fff 3px, #fff 6px)", "PLAID": "#8B0000"';
+    html += '};';
+    // Check for exact match first
+    html += 'if (colorMap[name]) return colorMap[name];';
+    // Check for partial matches (color name contains a key)
+    html += 'for (var key in colorMap) {';
+    html += 'if (name.indexOf(key) !== -1) return colorMap[key];';
+    html += '}';
+    // Check if key is in color name
+    html += 'for (var key in colorMap) {';
+    html += 'if (key.indexOf(name) !== -1 && name.length > 2) return colorMap[key];';
+    html += '}';
+    // Default fallback - use a neutral gray
+    html += 'return "#B0B0B0";';
+    html += '}';
+
     html += 'function renderMerchandisingView(container, data) {';
     html += 'var commodities = data.commodityBreakdown || [];';
     html += 'var customers = data.customerBreakdown || [];';
@@ -4116,7 +4146,7 @@ function getHTML() {
     html += 'var barWidth = Math.max(pct * 4, 8);'; // Scale for visual - wider bars
     html += 'out += \'<div class="color-rank-item">\';';
     html += 'out += \'<div class="color-rank-num">\' + (idx + 1) + \'</div>\';';
-    html += 'out += \'<div class="color-rank-swatch" style="background:\' + merchColors[idx % merchColors.length] + \'"></div>\';';
+    html += 'out += \'<div class="color-rank-swatch" style="background:\' + getColorSwatch(c.color) + \'"></div>\';';
     html += 'out += \'<div class="color-rank-name">\' + (c.color || "Unknown") + \'</div>\';';
     html += 'out += \'<div class="color-rank-value">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K</div>\';';
     html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units</div>\';';
