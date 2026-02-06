@@ -3276,7 +3276,7 @@ function getHTML() {
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
-    html += '<div class="view-toggle"><button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button></div>';
+    html += '<div class="view-toggle"><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button></div>';
     html += '</div>';
 
     // Main content
@@ -3826,8 +3826,8 @@ function getHTML() {
     html += 'var out = \'<div class="summary-container">\';';
     // Toggle header
     html += 'out += \'<div class="summary-header"><div class="summary-toggle"><span>Group by:</span><div class="summary-toggle-btns">\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" data-groupby="commodity">Commodity</button>\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" data-groupby="customer">Customer</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(\\\'commodity\\\')">Commodity</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(\\\'customer\\\')">Customer</button>\';';
     html += 'out += \'</div></div>\';';
     html += 'if (groupBy === "commodity") { out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\'; }';
     html += 'out += \'</div>\';';
@@ -4019,22 +4019,6 @@ function getHTML() {
     html += 'html += \'<div class="chart-card" style="grid-column:span 2"><h3>🗺️ Commodity Treemap</h3><div id="treemapContainer" style="height:400px;position:relative"></div></div>\';';
     // Customer pie chart placeholder
     html += 'html += \'<div class="chart-card"><h3>👥 Top Customers</h3><div class="chart-wrapper"><canvas id="customerChart"></canvas></div></div>\';';
-    // Commodity chart placeholder
-    html += 'html += \'<div class="chart-card"><h3>📦 By Commodity</h3><div class="chart-wrapper"><canvas id="commodityChart"></canvas></div></div>\';';
-    // Top Colors by Value
-    html += 'var sortedColors = Object.entries(colorData).sort(function(a,b) { return b[1].dollars - a[1].dollars; });';
-    html += 'html += \'<div class="chart-card" style="grid-column:span 2"><h3>🎨 Top Colors by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + sortedColors.length + \' colors)</span></h3>\';';
-    html += 'html += \'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem;font-size:0.8125rem">\';';
-    html += 'sortedColors.slice(0, 30).forEach(function(entry, idx) {';
-    html += 'var color = entry[0]; var data = entry[1];';
-    html += 'var dollars = data.dollars >= 1000000 ? "$" + (data.dollars/1000000).toFixed(1) + "M" : "$" + Math.round(data.dollars/1000) + "K";';
-    html += 'html += \'<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem;background:#f5f5f7;border-radius:6px">\';';
-    html += 'html += \'<span style="color:#86868b;font-size:0.75rem;min-width:1.5rem">\' + (idx + 1) + \'</span>\';';
-    html += 'html += \'<span style="flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\' + color + \'</span>\';';
-    html += 'html += \'<span style="color:#0088c2;font-weight:600">\' + dollars + \'</span>\';';
-    html += 'html += \'<span style="color:#86868b;font-size:0.6875rem">\' + formatNumber(data.units) + \' · \' + data.styles.size + \'</span>\';';
-    html += 'html += \'</div>\'; });';
-    html += 'html += \'</div></div>\';';
     html += 'html += \'</div>\';';
     html += 'container.innerHTML = html;';
     // Render charts
@@ -4072,11 +4056,6 @@ function getHTML() {
     html += 'var custLabels = custEntries.map(function(e) { return e[0]; });';
     html += 'var custValues = custEntries.map(function(e) { return Math.round(e[1]); });';
     html += 'new Chart(document.getElementById("customerChart"), { type: "doughnut", data: { labels: custLabels, datasets: [{ data: custValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
-    // Commodity pie chart
-    html += 'var commEntries = Object.entries(commodityData).sort(function(a,b) { return b[1] - a[1]; });';
-    html += 'var commLabels = commEntries.map(function(e) { return e[0]; });';
-    html += 'var commValues = commEntries.map(function(e) { return Math.round(e[1]); });';
-    html += 'new Chart(document.getElementById("commodityChart"), { type: "doughnut", data: { labels: commLabels, datasets: [{ data: commValues, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } });';
     html += '}';
 
     // Merchandising view
@@ -5042,7 +5021,7 @@ function getHTML() {
     html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "");';
     html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "");';
     // Restore view toggle for Sales mode
-    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn" data-view="monthly">By Month</button><button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button>\';';
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="topmovers">🏆 Top Movers</button><button class="view-btn" data-view="opportunities">🎯 Opportunities</button><button class="view-btn" data-view="orders">By SO#</button><button class="view-btn" data-view="charts">Charts</button><button class="view-btn" data-view="merchandising">📈 Merchandising</button>\';';
     html += 'bindViewToggle();';
     html += 'loadFilters();';
     html += '}';
