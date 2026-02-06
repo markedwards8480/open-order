@@ -3826,8 +3826,8 @@ function getHTML() {
     html += 'var out = \'<div class="summary-container">\';';
     // Toggle header
     html += 'out += \'<div class="summary-header"><div class="summary-toggle"><span>Group by:</span><div class="summary-toggle-btns">\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(\\\'commodity\\\')">Commodity</button>\';';
-    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(\\\'customer\\\')">Customer</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "commodity" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(this.textContent.toLowerCase())">Commodity</button>\';';
+    html += 'out += \'<button class="summary-toggle-btn\' + (groupBy === "customer" ? " active" : "") + \'" onclick="window.setSummaryGroupBy(this.textContent.toLowerCase())">Customer</button>\';';
     html += 'out += \'</div></div>\';';
     html += 'if (groupBy === "commodity") { out += \'<div class="summary-legend"><span><div class="comm-color-box" style="background:#0088c2"></div>Top</span><span><div class="comm-color-box" style="background:#34c759"></div>Bottom</span><span><div class="comm-color-box" style="background:#af52de"></div>Dress</span><span><div class="comm-color-box" style="background:#ff9500"></div>Sweater</span><span><div class="comm-color-box" style="background:#ff3b30"></div>Jacket</span></div>\'; }';
     html += 'out += \'</div>\';';
