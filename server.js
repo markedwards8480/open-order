@@ -4100,7 +4100,25 @@ function getHTML() {
     // Build the HTML structure
     html += 'var out = \'<div class="merch-container">\';';
 
-    // Section 1: Commodity Mix Balance
+    // Section 1: Color Ranking (Top colors) - Most impactful first
+    html += 'var colors = data.colorBreakdown || [];';
+    html += 'var colorTotal = colors.reduce(function(a,c) { return a + (parseFloat(c.total_dollars)||0); }, 0);';
+    html += 'out += \'<div class="merch-section"><h3>🎨 Top Colors by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + colors.length + \' colors)</span></h3>\';';
+    html += 'out += \'<div class="color-ranking-grid">\';';
+    html += 'colors.forEach(function(c, idx) {';
+    html += 'var pct = colorTotal > 0 ? (parseFloat(c.total_dollars)/colorTotal*100) : 0;';
+    html += 'var barWidth = Math.max(pct * 4, 8);';
+    html += 'out += \'<div class="color-rank-item">\';';
+    html += 'out += \'<div class="color-rank-num">\' + (idx + 1) + \'</div>\';';
+    html += 'out += \'<div class="color-rank-swatch" style="background:\' + getColorSwatch(c.color) + \'"></div>\';';
+    html += 'out += \'<div class="color-rank-name">\' + (c.color || "Unknown") + \'</div>\';';
+    html += 'out += \'<div class="color-rank-value">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K</div>\';';
+    html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+
+    // Section 2: Commodity Mix Balance
     html += 'out += \'<div class="merch-section"><h3>📊 Commodity Mix Balance</h3><div class="merch-row">\';';
     html += 'out += \'<div class="merch-chart-box"><div class="merch-donut-wrapper"><canvas id="merchDonut" width="280" height="280"></canvas><div class="merch-donut-center"><div class="value">$\' + (total/1000000).toFixed(1) + \'M</div><div class="label">Total Value</div></div></div></div>\';';
     html += 'out += \'<div class="merch-legend">\';';
@@ -4111,27 +4129,9 @@ function getHTML() {
     html += '});';
     html += 'out += \'</div></div></div>\';';
 
-    // Section 2: Horizontal Bar Chart
+    // Section 3: Horizontal Bar Chart
     html += 'out += \'<div class="merch-section"><h3>📊 Commodities Ranked by Value</h3>\';';
     html += 'out += \'<div id="merchBarsContainer"></div></div>\';';
-
-    // Section 3: Color Ranking (Top 25-30 colors)
-    html += 'var colors = data.colorBreakdown || [];';
-    html += 'var colorTotal = colors.reduce(function(a,c) { return a + (parseFloat(c.total_dollars)||0); }, 0);';
-    html += 'out += \'<div class="merch-section"><h3>🎨 Top Colors by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(\' + colors.length + \' colors)</span></h3>\';';
-    html += 'out += \'<div class="color-ranking-grid">\';';
-    html += 'colors.forEach(function(c, idx) {';
-    html += 'var pct = colorTotal > 0 ? (parseFloat(c.total_dollars)/colorTotal*100) : 0;';
-    html += 'var barWidth = Math.max(pct * 4, 8);'; // Scale for visual - wider bars
-    html += 'out += \'<div class="color-rank-item">\';';
-    html += 'out += \'<div class="color-rank-num">\' + (idx + 1) + \'</div>\';';
-    html += 'out += \'<div class="color-rank-swatch" style="background:\' + getColorSwatch(c.color) + \'"></div>\';';
-    html += 'out += \'<div class="color-rank-name">\' + (c.color || "Unknown") + \'</div>\';';
-    html += 'out += \'<div class="color-rank-value">$\' + (parseFloat(c.total_dollars)/1000).toFixed(0) + \'K</div>\';';
-    html += 'out += \'<div class="color-rank-meta">\' + parseInt(c.total_qty).toLocaleString() + \' units</div>\';';
-    html += 'out += \'</div>\';';
-    html += '});';
-    html += 'out += \'</div></div>\';';
 
     // Section 4: Customer Scorecard
     html += 'out += \'<div class="merch-section"><h3>🎯 Customer Assortment Scorecard</h3>\';';
