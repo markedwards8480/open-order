@@ -3903,7 +3903,7 @@ function getHTML() {
     html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#f9fafb";';
     html += 'out += \'<tr style="background:\' + bgColor + \';border-bottom:1px solid #eee">\';';
     html += 'out += \'<td style="padding:0.75rem;font-weight:600;color:#86868b">\' + (idx + 1) + \'</td>\';';
-    html += 'out += \'<td style="padding:0.75rem;font-weight:600;color:#1e3a5f">\' + item.style_number + \'</td>\';';
+    html += 'out += \'<td style="padding:0.75rem;font-weight:600"><a href="#" onclick="showStyleDetail(\\\'\' + item.style_number + \'\\\');return false" style="color:#1e3a5f;text-decoration:underline;cursor:pointer">\' + item.style_number + \'</a></td>\';';
     html += 'out += \'<td style="padding:0.75rem">\' + (item.style_name || "-") + \'</td>\';';
     html += 'out += \'<td style="padding:0.75rem"><span class="commodity-tag">\' + (item.commodity || "-") + \'</span></td>\';';
     html += 'out += \'<td style="padding:0.75rem;text-align:right;font-weight:500">\' + formatNumber(item.total_qty) + \'</td>\';';
