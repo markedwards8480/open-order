@@ -3033,11 +3033,11 @@ function getHTML() {
     html += '.legend-item{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:#666;cursor:pointer;padding:2px 4px;border-radius:3px}';
     html += '.legend-item:hover{background:#f0f4f8}';
     html += '.legend-color{width:10px;height:10px;border-radius:2px}';
-    html += '.dashboard-treemap{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}';
-    html += '.treemap-item{padding:6px 8px;color:white;border-radius:6px;cursor:pointer;transition:all 0.15s}';
+    html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:3px}';
+    html += '.treemap-item{padding:6px 8px;color:white;border-radius:6px;cursor:pointer;transition:all 0.15s;min-width:55px;box-sizing:border-box}';
     html += '.treemap-item:hover{opacity:0.85;transform:scale(1.02)}';
     html += '.treemap-label{font-weight:600;font-size:0.6875rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
-    html += '.treemap-value{font-size:0.75rem;opacity:0.95}';
+    html += '.treemap-value{font-size:0.6875rem;opacity:0.95}';
     html += '.treemap-pct{font-size:0.5625rem;opacity:0.8}';
     html += '.treemap-header{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap}';
     html += '.treemap-header h3{margin:0;flex-shrink:0}';
@@ -4396,7 +4396,8 @@ function getHTML() {
     html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
-    html += 'out += \'<div class="treemap-item" style="background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'var width = Math.max(pct * 2.5, 18);'; // Scale percentage to width, min 18%
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + width + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
