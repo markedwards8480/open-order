@@ -3671,6 +3671,27 @@ function getHTML() {
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
+    // Weighted Average Price by Commodity chart
+    html += 'out += \'<div class="dashboard-card"><h3>💰 Avg Cost/Unit by Commodity</h3>\';';
+    html += 'var avgPriceData = commData.map(function(c) {';
+    html += 'var qty = parseFloat(c.total_qty) || 0;';
+    html += 'var dollars = parseFloat(c.total_dollars) || 0;';
+    html += 'return { commodity: c.commodity || "Other", avgPrice: qty > 0 ? dollars / qty : 0, qty: qty, dollars: dollars };';
+    html += '}).filter(function(d) { return d.avgPrice > 0; }).sort(function(a,b) { return b.avgPrice - a.avgPrice; });';
+    html += 'var maxAvgPrice = avgPriceData.length > 0 ? Math.max.apply(null, avgPriceData.map(function(d) { return d.avgPrice; })) : 1;';
+    html += 'out += \'<div style="display:flex;flex-direction:column;gap:6px;margin-top:0.75rem">\';';
+    html += 'avgPriceData.slice(0,8).forEach(function(d, idx) {';
+    html += 'var barWidth = maxAvgPrice > 0 ? (d.avgPrice / maxAvgPrice * 100) : 0;';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:8px">\';';
+    html += 'out += \'<div style="width:70px;font-size:0.7rem;color:#1e3a5f;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\' + d.commodity + \'">\' + d.commodity + \'</div>\';';
+    html += 'out += \'<div style="flex:1;height:18px;background:#f0f0f0;border-radius:4px;overflow:hidden">\';';
+    html += 'out += \'<div style="height:100%;width:\' + barWidth + \'%;background:\' + colors[idx % colors.length] + \';display:flex;align-items:center;justify-content:flex-end;padding-right:4px">\';';
+    html += 'out += \'<span style="font-size:0.65rem;color:white;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.3)">$\' + d.avgPrice.toFixed(2) + \'</span>\';';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'<div style="width:50px;font-size:0.6rem;color:#86868b;text-align:right">\' + Math.round(d.qty/1000) + \'K u</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right side - top styles
     html += 'out += \'<div class="dashboard-products">\';';
