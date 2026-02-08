@@ -1476,6 +1476,15 @@ app.get('/api/po/orders', async function(req, res) {
             params.push(req.query.status);
         }
 
+        // Month filter (by warehouse date)
+        if (req.query.months) {
+            var monthList = req.query.months.split(',').map(m => m.trim()).filter(m => m);
+            if (monthList.length > 0) {
+                conditions.push("TO_CHAR(po_warehouse_date, 'YYYY-MM') = ANY($" + paramIndex++ + ")");
+                params.push(monthList);
+            }
+        }
+
         var whereClause = 'WHERE ' + conditions.join(' AND ');
 
         // Get items grouped by style with PO details as JSON array
@@ -3504,6 +3513,7 @@ function getHTML() {
     // PO mode - pass vendor filter (stored in state.filters.customers when in PO mode)
     html += 'if (state.filters.customers.length > 0) params.append("vendors", state.filters.customers.join("||"));';
     html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
+    html += 'if (state.filters.months.length > 0) params.append("months", state.filters.months.join(","));';
     html += 'params.append("status", state.filters.poStatus || "Open");';
     html += 'var res = await fetch("/api/po/orders?" + params.toString());';
     html += 'var data = await res.json();';
@@ -3580,7 +3590,10 @@ function getHTML() {
     html += 'var nextYear = nextM && nextM.month ? nextM.month.split("-")[0] : null;';
     html += 'if (prevYear !== year) { out += \'<div class="timeline-year-group"><div class="timeline-year-label">\\x27\' + year.slice(-2) + \'</div><div class="timeline-year-months">\'; }';
     html += 'prevYear = year;';
-    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
+    html += 'var monthKey = m.month;';
+    html += 'var isActive = state.filters.months.indexOf(monthKey) !== -1;';
+    html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonthPO(\\x27\' + monthKey + \'\\x27)">\';';
+    html += 'out += \'<div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
     html += 'if (nextYear !== year) { out += \'</div></div>\'; }';
     html += '});';
@@ -4921,6 +4934,14 @@ function getHTML() {
     html += 'state.filters.months = [monthKey];';
     html += 'document.getElementById("monthDisplay").textContent = monthKey;';
     html += 'document.querySelector("#monthMultiSelect .multi-select-display").classList.add("active");';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
+    // Filter by month from Import POs timeline (toggle behavior)
+    html += 'function filterByMonthPO(monthKey) {';
+    html += 'var idx = state.filters.months.indexOf(monthKey);';
+    html += 'if (idx === -1) { state.filters.months = [monthKey]; }';  // Select this month
+    html += 'else { state.filters.months = []; }';  // Deselect if already selected
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
