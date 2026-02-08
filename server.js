@@ -3661,10 +3661,12 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right side - top styles
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">\';';
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
     html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 50) + \' of \' + items.length + \')</span></h3>\';';
+    html += 'out += \'<div style="display:flex;gap:0.5rem">\';';
+    html += 'out += \'<button class="group-toggle-btn\' + (state.stackByStyle ? " active" : "") + \'" onclick="toggleStackByStylePO()">🎨 Stack Colors</button>\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.groupByVendor ? " active" : "") + \'" onclick="toggleGroupByVendor()">🏭 Group by Vendor</button>\';';
-    html += 'out += \'</div>\';';
+    html += 'out += \'</div></div>\';';
     // Grouped by vendor view
     html += 'if (state.groupByVendor) {';
     html += 'var vendorStyles = {};';
@@ -3699,8 +3701,81 @@ function getHTML() {
     html += 'out += \'</div></div>\';';
     html += '});';
     html += '} else {';
-    // Normal ungrouped view
+    // Normal view - with optional stacking by base style
     html += 'out += \'<div class="dashboard-grid">\';';
+    html += 'if (state.stackByStyle) {';
+    // Group items by base style
+    html += 'var styleGroups = {};';
+    html += 'items.slice(0, 50).forEach(function(item) {';
+    html += 'var baseStyle = item.style_number.split("-")[0];';
+    html += 'if (!styleGroups[baseStyle]) styleGroups[baseStyle] = [];';
+    html += 'styleGroups[baseStyle].push(item);';
+    html += '});';
+    // Render groups - stacked if multiple, normal if single
+    html += 'var groupKeys = Object.keys(styleGroups).sort(function(a,b) {';
+    html += 'var aTotal = styleGroups[a].reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'var bTotal = styleGroups[b].reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'return bTotal - aTotal; });';
+    html += 'groupKeys.forEach(function(baseStyle) {';
+    html += 'var group = styleGroups[baseStyle];';
+    html += 'var topItem = group[0];';
+    html += 'var imgSrc = topItem.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
+    html += 'var totalDollars = group.reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'var totalUnits = group.reduce(function(s,i) { return s + (i.total_qty || 0); }, 0);';
+    html += 'var isExpanded = state.expandedStacks[baseStyle];';
+    html += 'if (group.length > 1) {';
+    // Render as stack
+    html += 'out += \'<div class="style-stack\' + (isExpanded ? " expanded" : "") + \'" data-base="\' + baseStyle + \'" onclick="toggleStackPO(\\x27\' + baseStyle + \'\\x27, event)">\';';
+    html += 'out += \'<span class="stack-badge">\' + group.length + \' colors</span>\';';
+    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name" style="font-weight:700">\' + baseStyle + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + group.length + \' color variants</div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (topItem.commodity || "-") + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(totalUnits) + \' units</span><span class="money">$\' + formatNumber(Math.round(totalDollars)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    // Expanded container with all variants
+    html += 'out += \'<div class="stack-expanded-container">\';';
+    html += 'out += \'<div class="stack-expanded-header"><span class="stack-expanded-title">🎨 \' + baseStyle + \' - \' + group.length + \' Colors</span><button class="stack-expanded-close" onclick="collapseStackPO(\\x27\' + baseStyle + \'\\x27, event)">×</button></div>\';';
+    html += 'group.forEach(function(item) {';
+    html += 'var iSrc = item.image_url || "";';
+    html += 'if (iSrc) { var m = iSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (m) iSrc = "/api/image/" + m[1]; }';
+    html += 'var fId = iSrc.startsWith("/api/image/") ? iSrc.replace("/api/image/", "") : "";';
+    html += 'out += \'<div class="dashboard-style-card" onclick="event.stopPropagation();">\';';
+    html += 'out += \'<div class="dashboard-style-img" style="height:100px">\';';
+    html += 'if (iSrc) out += \'<img src="\' + iSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:1.5rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info" style="padding:0.5rem">\';';
+    html += 'out += \'<div class="dashboard-style-num" style="font-size:0.7rem">\' + item.style_number + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats" style="font-size:0.65rem"><span>\' + formatNumber(item.total_qty || 0) + \' u</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '} else {';
+    // Single item - render normally
+    html += 'var item = topItem;';
+    html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
+    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \' <span style="color:#86868b;font-size:0.625rem">\' + poCount + \' PO\' + (poCount !== 1 ? "s" : "") + \'</span></div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '}});';
+    html += '} else {';
+    // Original non-stacked view
     html += 'items.slice(0, 50).forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
@@ -3718,6 +3793,7 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
     html += '});';
+    html += '}';
     html += 'out += \'</div>\';';
     html += '}';
     html += 'out += \'</div>\';';
@@ -4801,6 +4877,30 @@ function getHTML() {
     html += 'event.stopPropagation();';
     html += 'delete state.expandedStacks[baseStyle];';
     html += 'if (state.data) renderContent(state.data);';
+    html += '}';
+
+    // PO-specific stack functions (call renderPOContent)
+    html += 'function toggleStackByStylePO() {';
+    html += 'state.stackByStyle = !state.stackByStyle;';
+    html += 'state.expandedStacks = {};';
+    html += 'if (state.data) renderPOContent(state.data);';
+    html += '}';
+
+    html += 'function toggleStackPO(baseStyle, event) {';
+    html += 'event.stopPropagation();';
+    html += 'if (state.expandedStacks[baseStyle]) {';
+    html += 'delete state.expandedStacks[baseStyle];';
+    html += '} else {';
+    html += 'state.expandedStacks = {};';
+    html += 'state.expandedStacks[baseStyle] = true;';
+    html += '}';
+    html += 'if (state.data) renderPOContent(state.data);';
+    html += '}';
+
+    html += 'function collapseStackPO(baseStyle, event) {';
+    html += 'event.stopPropagation();';
+    html += 'delete state.expandedStacks[baseStyle];';
+    html += 'if (state.data) renderPOContent(state.data);';
     html += '}';
 
     // Filter by vendor from Import POs dashboard (uses customer dropdown in PO mode)
