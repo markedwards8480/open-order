@@ -3406,7 +3406,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, treemapView: "commodity" };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, treemapView: "commodity" };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -3587,8 +3587,54 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right side - top styles
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 50) + \' of \' + items.length + \')</span></h3>\';';
-    html += 'out += \'<div class="dashboard-styles-grid">\';';
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">\';';
+    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 50) + \' of \' + items.length + \')</span></h3>\';';
+    html += 'out += \'<button class="group-toggle-btn\' + (state.groupByVendor ? " active" : "") + \'" onclick="toggleGroupByVendor()">🏭 Group by Vendor</button>\';';
+    html += 'out += \'</div>\';';
+    // Grouped by vendor view
+    html += 'if (state.groupByVendor) {';
+    html += 'var vendorStyles = {};';
+    html += 'var vendorTotals = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'if (item.pos) { item.pos.forEach(function(po) {';
+    html += 'var vend = po.vendor || "Unknown";';
+    html += 'if (!vendorStyles[vend]) { vendorStyles[vend] = {}; vendorTotals[vend] = { dollars: 0, units: 0 }; }';
+    html += 'if (!vendorStyles[vend][item.style_number]) { vendorStyles[vend][item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0 }; }';
+    html += 'vendorStyles[vend][item.style_number].total_qty += po.quantity || 0;';
+    html += 'vendorStyles[vend][item.style_number].total_dollars += po.total_amount || 0;';
+    html += 'vendorTotals[vend].dollars += po.total_amount || 0;';
+    html += 'vendorTotals[vend].units += po.quantity || 0;';
+    html += '}); } else {';
+    html += 'var vend = item.vendor || "Unknown";';
+    html += 'if (!vendorStyles[vend]) { vendorStyles[vend] = {}; vendorTotals[vend] = { dollars: 0, units: 0 }; }';
+    html += 'if (!vendorStyles[vend][item.style_number]) { vendorStyles[vend][item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0 }; }';
+    html += 'vendorStyles[vend][item.style_number].total_qty += item.total_qty || 0;';
+    html += 'vendorStyles[vend][item.style_number].total_dollars += item.total_dollars || 0;';
+    html += 'vendorTotals[vend].dollars += item.total_dollars || 0;';
+    html += 'vendorTotals[vend].units += item.total_qty || 0;';
+    html += '}});';
+    html += 'var sortedVendors = Object.keys(vendorTotals).sort(function(a,b) { return vendorTotals[b].dollars - vendorTotals[a].dollars; });';
+    html += 'sortedVendors.forEach(function(vend) {';
+    html += 'var styles = Object.values(vendorStyles[vend]).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    html += 'var totals = vendorTotals[vend];';
+    html += 'out += \'<div class="customer-group"><div class="customer-group-header" onclick="filterByVendor(\\x27\' + vend.replace(/\'/g, "\\\\\'") + \'\\x27)"><span class="customer-group-name">🏭 \' + vend + \'</span><span class="customer-group-stats">\' + styles.length + \' styles · \' + formatNumber(totals.units) + \' units · <span class="money">$\' + formatNumber(Math.round(totals.dollars)) + \'</span></span></div>\';';
+    html += 'out += \'<div class="customer-group-grid">\';';
+    html += 'styles.forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
+    html += 'out += \'<div class="mini-style-card">\';';
+    html += 'out += \'<div class="mini-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:1.25rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="mini-style-info"><div class="mini-style-num">\' + item.style_number + \'</div><div class="mini-style-value">$\' + formatNumber(Math.round(item.total_dollars)) + \'</div></div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += '} else {';
+    // Normal ungrouped view
+    html += 'out += \'<div class="dashboard-grid">\';';
     html += 'items.slice(0, 50).forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
@@ -3606,7 +3652,9 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
     html += '});';
-    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div>\';';
+    html += '}';
+    html += 'out += \'</div>\';';
     html += 'out += \'</div>\';'; // end dashboard-layout
     html += 'container.innerHTML = out; }';
 
@@ -4577,6 +4625,22 @@ function getHTML() {
     html += 'state.groupByCustomer = !state.groupByCustomer;';
     html += 'if (state.data) renderContent(state.data);';
     html += '}';
+
+    // Toggle group by vendor in Import POs dashboard
+    html += 'function toggleGroupByVendor() {';
+    html += 'state.groupByVendor = !state.groupByVendor;';
+    html += 'if (state.data) renderContent(state.data);';
+    html += '}';
+
+    // Filter by vendor from Import POs dashboard
+    html += 'function filterByVendor(vend) {';
+    html += 'var checkboxes = document.querySelectorAll("#vendorOptions input[type=checkbox]");';
+    html += 'checkboxes.forEach(function(cb) { cb.checked = cb.value === vend; });';
+    html += 'state.filters.vendors = [vend];';
+    html += 'document.getElementById("vendorDisplay").textContent = vend;';
+    html += 'document.querySelector("#vendorMultiSelect .multi-select-display").classList.add("active");';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
 
 
     // Filter by month from dashboard timeline
