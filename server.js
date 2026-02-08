@@ -991,6 +991,12 @@ app.get('/api/orders', async function(req, res) {
             conditions.push('style_number = $' + paramIndex++);
             params.push(style);
         }
+        // Style search (partial match)
+        var styleSearch = req.query.styleSearch;
+        if (styleSearch) {
+            conditions.push('style_number ILIKE $' + paramIndex++);
+            params.push('%' + styleSearch + '%');
+        }
         if (soNumber) {
             conditions.push('so_number = $' + paramIndex++);
             params.push(soNumber);
@@ -1483,6 +1489,12 @@ app.get('/api/po/orders', async function(req, res) {
                 conditions.push("TO_CHAR(po_warehouse_date, 'YYYY-MM') = ANY($" + paramIndex++ + ")");
                 params.push(monthList);
             }
+        }
+
+        // Style search (partial match)
+        if (req.query.styleSearch) {
+            conditions.push('style_number ILIKE $' + paramIndex++);
+            params.push('%' + req.query.styleSearch + '%');
         }
 
         var whereClause = 'WHERE ' + conditions.join(' AND ');
@@ -3341,6 +3353,7 @@ function getHTML() {
     html += '<div class="filter-group"><label class="filter-label">Customer</label><div class="multi-select" id="customerMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'customer\')"><span id="customerDisplay">All Customers</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="customerDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Delivery</label><div class="multi-select" id="monthMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'month\')"><span id="monthDisplay">All Months</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="monthDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><div class="multi-select" id="commodityMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'commodity\')"><span id="commodityDisplay">All Commodities</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="commodityDropdown"></div></div></div>';
+    html += '<div class="filter-group"><label class="filter-label">Style Search</label><div style="position:relative"><input type="text" id="styleSearchInput" placeholder="Search styles..." style="padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.8125rem;width:140px" onkeyup="handleStyleSearch(event)"><button onclick="clearStyleSearch()" id="styleSearchClear" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#86868b;display:none;font-size:1rem">×</button></div></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
     html += '<div class="filter-group"><label class="filter-label">Sort By</label><select class="filter-select" id="sortByFilter"><option value="value">$ Value (High→Low)</option><option value="units">Units (High→Low)</option><option value="orders">Most Orders</option><option value="commodity">Commodity</option></select></div>';
@@ -3444,7 +3457,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity" };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity", styleSearch: "" };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -3509,6 +3522,7 @@ function getHTML() {
     html += 'document.getElementById("content").innerHTML = \'<div class="loading"><div class="spinner"></div></div>\';';
     html += 'try {';
     html += 'var params = new URLSearchParams();';
+    html += 'if (state.styleSearch) params.append("styleSearch", state.styleSearch);';
     html += 'if (state.mode === "po") {';
     // PO mode - pass vendor filter (stored in state.filters.customers when in PO mode)
     html += 'if (state.filters.customers.length > 0) params.append("vendors", state.filters.customers.join("||"));';
@@ -5653,9 +5667,30 @@ function getHTML() {
     html += 'document.querySelectorAll(".view-btn").forEach(function(b) { b.classList.remove("active"); });';
     html += 'btn.classList.add("active"); state.view = btn.dataset.view; loadData(); }); });';
 
+    // Style search handlers
+    html += 'var styleSearchTimeout = null;';
+    html += 'function handleStyleSearch(e) {';
+    html += 'clearTimeout(styleSearchTimeout);';
+    html += 'var val = e.target.value.trim();';
+    html += 'document.getElementById("styleSearchClear").style.display = val ? "block" : "none";';
+    html += 'styleSearchTimeout = setTimeout(function() {';
+    html += 'state.styleSearch = val;';
+    html += 'updateClearButton();';
+    html += 'loadData();';
+    html += '}, 300); }';
+    html += 'function clearStyleSearch() {';
+    html += 'document.getElementById("styleSearchInput").value = "";';
+    html += 'document.getElementById("styleSearchClear").style.display = "none";';
+    html += 'state.styleSearch = "";';
+    html += 'updateClearButton();';
+    html += 'loadData(); }';
+
     // Clear filters
     html += 'function clearFilters() {';
     html += 'state.filters = { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: state.filters.status, poStatus: state.filters.poStatus };';
+    html += 'state.styleSearch = "";';
+    html += 'document.getElementById("styleSearchInput").value = "";';
+    html += 'document.getElementById("styleSearchClear").style.display = "none";';
     // Clear all multi-select checkboxes and reset displays
     html += '["year", "fy", "customer", "month", "commodity"].forEach(function(type) {';
     html += 'document.querySelectorAll("#" + type + "Dropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
@@ -5667,7 +5702,7 @@ function getHTML() {
     // Reset months dropdown to show all months
     html += 'filterMonthsDropdown();';
     html += 'updateClearButton(); loadData(); }';
-    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0;';
+    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0 || state.styleSearch;';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
 
     // Chat
