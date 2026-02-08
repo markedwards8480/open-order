@@ -5123,7 +5123,7 @@ function getHTML() {
     html += 'if (item.pos && item.pos.length > 0) {';
     html += 'item.pos.forEach(function(po) {';
     html += 'var key = (po.po_number || "") + "|" + (po.color || "");';
-    html += 'if (!poMap[key]) { poMap[key] = { po_number: po.po_number, vendor_name: po.vendor_name, color: po.color, po_warehouse_date: po.po_warehouse_date, po_quantity: 0, po_total: 0 }; }';
+    html += 'if (!poMap[key]) { poMap[key] = { po_number: po.po_number, vendor_name: po.vendor_name, color: po.color, po_warehouse_date: po.po_warehouse_date, po_quantity: 0, po_total: 0, po_unit_price: parseFloat(po.po_unit_price) || 0 }; }';
     html += 'poMap[key].po_quantity += parseFloat(po.po_quantity) || 0;';
     html += 'poMap[key].po_total += parseFloat(po.po_total) || 0;';
     html += '}); }';
@@ -5140,7 +5140,8 @@ function getHTML() {
     html += 'if (uniquePOs.length > 0) {';
     html += 'uniquePOs.forEach(function(po) {';
     html += 'var date = po.po_warehouse_date ? new Date(po.po_warehouse_date).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
-    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
+    html += 'var unitPrice = po.po_unit_price ? "$" + po.po_unit_price.toFixed(2) : "";';
+    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + (unitPrice ? \' <span style="color:#0088c2;font-weight:600">\' + unitPrice + \'/u</span>\' : "") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
     html += 'posHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(po.po_quantity || 0) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
     html += '} else { posHtml = \'<div style="color:#86868b;font-size:0.875rem;padding:0.5rem 0">No PO details available</div>\'; }';
     html += 'document.getElementById("modalOrdersList").innerHTML = posHtml;';
