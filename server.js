@@ -5258,6 +5258,21 @@ initDB().then(function() {
         } else {
             console.log('WorkDrive auto-sync not enabled (no folder ID configured)');
         }
+
+        // Schedule automatic image pre-cache at 4 AM daily (after CSV sync)
+        cron.schedule('0 4 * * *', async function() {
+            console.log('=== SCHEDULED IMAGE PRE-CACHE STARTING (4 AM) ===');
+            try {
+                await preCacheImages();
+                console.log('Scheduled pre-cache: Complete');
+            } catch (err) {
+                console.error('Scheduled pre-cache error:', err);
+            }
+            console.log('=== SCHEDULED IMAGE PRE-CACHE COMPLETE ===');
+        }, {
+            timezone: 'America/New_York' // Eastern Time
+        });
+        console.log('Image pre-cache scheduled for 4 AM ET daily');
     });
 });
 // Deploy trigger Wed Feb  4 20:10:44 UTC 2026
