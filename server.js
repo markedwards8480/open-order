@@ -3560,26 +3560,71 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-layout">\';';
     // Left sidebar - charts
     html += 'out += \'<div class="dashboard-charts">\';';
-    // Vendor treemap
-    html += 'out += \'<div class="dashboard-card"><h3>🏭 By Vendor <span style="font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
+    // Monthly trends stacked bar chart
+    html += 'var monthlyByComm = {};';
+    html += 'var allComms = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'var comm = item.commodity || "Other";';
+    html += 'allComms[comm] = (allComms[comm] || 0) + (item.total_dollars || 0);';
+    html += 'if (item.pos) { item.pos.forEach(function(po) {';
+    html += 'var mk = po.eta_month || "Unknown";';
+    html += 'if (!monthlyByComm[mk]) monthlyByComm[mk] = {};';
+    html += 'monthlyByComm[mk][comm] = (monthlyByComm[mk][comm] || 0) + (po.total_amount || 0);';
+    html += '}); }});';
+    html += 'var topComms = Object.entries(allComms).sort(function(a,b) { return b[1] - a[1]; }).slice(0,5).map(function(e) { return e[0]; });';
+    html += 'var displayMonths = Object.keys(monthlyByComm).filter(function(m) { return m !== "Unknown"; }).sort();';
+    html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
+    html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
+    html += 'out += \'<div class="mini-stacked-container">\';';
+    html += 'out += \'<button class="mini-stacked-scroll-btn left" onclick="document.getElementById(\\x27poStackedBarWrapper\\x27).scrollBy({left:-150,behavior:\\x27smooth\\x27})">◀</button>\';';
+    html += 'out += \'<div class="mini-stacked-wrapper" id="poStackedBarWrapper"><div class="mini-stacked">\';';
+    html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'displayMonths.forEach(function(monthKey) {';
+    html += 'var monthData = monthlyByComm[monthKey] || {};';
+    html += 'var monthTotal = Object.values(monthData).reduce(function(a,v) { return a + v; }, 0);';
+    html += 'var barHeight = displayMax > 0 ? (monthTotal / displayMax * 100) : 0;';
+    html += 'var parts = monthKey.split("-");';
+    html += 'var monthName = monthNames[parseInt(parts[1])-1] + " \\x27" + parts[0].slice(2);';
+    html += 'out += \'<div class="mini-stacked-bar" style="height:100%">\';';
+    html += 'out += \'<div style="height:\' + barHeight + \'%;display:flex;flex-direction:column;justify-content:flex-end">\';';
+    html += 'topComms.forEach(function(comm, idx) {';
+    html += 'var value = monthData[comm] || 0;';
+    html += 'var segPct = monthTotal > 0 ? (value / monthTotal * 100) : 0;';
+    html += 'if (segPct > 0) { out += \'<div class="mini-stacked-segment" style="height:\' + segPct + \'%;background:\' + colors[idx] + \'" title="\' + comm + \': $\' + Math.round(value/1000) + \'K"></div>\'; }';
+    html += '});';
+    html += 'out += \'</div><div class="mini-stacked-label">\' + monthName + \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'<button class="mini-stacked-scroll-btn right" onclick="document.getElementById(\\x27poStackedBarWrapper\\x27).scrollBy({left:150,behavior:\\x27smooth\\x27})">▶</button>\';';
+    html += 'out += \'</div>\';';
+    // Legend
+    html += 'out += \'<div class="mini-stacked-legend">\';';
+    html += 'topComms.forEach(function(comm, idx) {';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:2px;background:\' + colors[idx] + \'"></div><span style="font-size:0.65rem;color:#666">\' + comm + \'</span></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    // Vendor treemap with onclick
+    html += 'out += \'<div class="dashboard-card"><h3>🏭 By Vendor <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-treemap">\';';
     html += 'vendorData.slice(0,10).forEach(function(v, idx) {';
     html += 'var value = parseFloat(v.total_dollars) || 0;';
     html += 'var pct = total > 0 ? (value / total * 100) : 0;';
     html += 'var size = Math.max(Math.sqrt(pct) * 10, 12);';
-    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'">\';';
-    html += 'out += \'<div class="treemap-label">\' + (v.vendor_name || "Unknown") + \'</div>\';';
+    html += 'var vendorName = v.vendor_name || "Unknown";';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByVendor(\\x27\' + vendorName.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="treemap-label">\' + vendorName + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
-    // Commodity breakdown
-    html += 'out += \'<div class="dashboard-card"><h3>📦 By Commodity</h3><div class="dashboard-treemap">\';';
+    // Commodity breakdown with onclick
+    html += 'out += \'<div class="dashboard-card"><h3>📦 By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-treemap">\';';
     html += 'commData.slice(0,8).forEach(function(c, idx) {';
     html += 'var value = parseFloat(c.total_dollars) || 0;';
     html += 'var pct = total > 0 ? (value / total * 100) : 0;';
     html += 'var size = Math.max(Math.sqrt(pct) * 10, 12);';
-    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'">\';';
-    html += 'out += \'<div class="treemap-label">\' + (c.commodity || "Other") + \'</div>\';';
+    html += 'var comm = c.commodity || "Other";';
+    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + size + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
