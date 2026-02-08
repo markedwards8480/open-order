@@ -3034,7 +3034,7 @@ function getHTML() {
     html += '.legend-item:hover{background:#f0f4f8}';
     html += '.legend-color{width:10px;height:10px;border-radius:2px}';
     html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:4px}';
-    html += '.treemap-item{padding:8px;color:white;border-radius:6px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-width:60px;flex-grow:1}';
+    html += '.treemap-item{padding:8px;color:white;border-radius:6px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-width:50px;box-sizing:border-box}';
     html += '.treemap-item:hover{transform:scale(1.03);box-shadow:0 4px 12px rgba(0,0,0,0.15)}';
     html += '.treemap-label{font-weight:600;font-size:0.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
     html += '.treemap-value{font-size:0.8125rem;opacity:0.9}';
@@ -3046,6 +3046,7 @@ function getHTML() {
     html += '.treemap-toggle button.active{background:#0088c2;color:white}';
     html += '.treemap-toggle button:hover:not(.active){background:#e5e5e5}';
     html += '.dashboard-customers{display:flex;flex-direction:column;gap:6px}';
+    html += '.dashboard-customers-scroll{display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto}';
     html += '.customer-bar{display:grid;grid-template-columns:1fr auto;gap:0.5rem;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer;position:relative;background:#f5f5f7}';
     html += '.customer-bar:hover{background:#e8f4fc}';
     html += '.customer-name{font-size:0.75rem;font-weight:500;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1}';
@@ -4388,28 +4389,21 @@ function getHTML() {
     html += 'out += \'</div>\';';
     html += 'out += \'</div>\';';
     html += '}'; // End of if (state.filters.months.length === 0)
-    // Treemap (compact version) - with Commodity/Customer toggle
-    html += 'var treemapView = state.treemapView || "commodity";';
-    html += 'var treemapData = treemapView === "commodity" ? commSorted : custSorted;';
-    html += 'var treemapTotal = treemapData.reduce(function(a, e) { return a + e[1]; }, 0);';
-    html += 'out += \'<div class="dashboard-card"><div class="treemap-header">\';';
-    html += 'out += \'<h3>🗺️ <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3>\';';
-    html += 'out += \'<div class="treemap-toggle"><button class="\' + (treemapView === "commodity" ? "active" : "") + \'" onclick="setTreemapView(\\x27commodity\\x27)">Commodity</button><button class="\' + (treemapView === "customer" ? "active" : "") + \'" onclick="setTreemapView(\\x27customer\\x27)">Customer</button></div>\';';
-    html += 'if (state.filters.months.length > 0) { out += \'<span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
-    html += 'out += \'<span style="font-size:0.75rem;color:#34c759;font-weight:600">$\' + (treemapTotal/1000000).toFixed(1) + \'M</span></div><div class="dashboard-treemap">\';';
-    html += 'treemapData.slice(0, 20).forEach(function(entry, idx) {';
-    html += 'var label = entry[0], value = entry[1];';
-    html += 'var pct = treemapTotal > 0 ? (value / treemapTotal * 100) : 0;';
-    html += 'var size = Math.max(Math.sqrt(pct) * 18, 8);';
-    html += 'var clickFn = treemapView === "commodity" ? "filterByCommodity" : "filterByCustomer";';
-    html += 'out += \'<div class="treemap-item" style="flex-basis:\' + Math.max(size, 12) + \'%;background:\' + colors[idx % colors.length] + \'" onclick="\' + clickFn + \'(\\x27\' + label.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
-    html += 'out += \'<div class="treemap-label">\' + label + \'</div>\';';
+    // Treemap (compact version) - Commodity only
+    html += 'out += \'<div class="dashboard-card"><h3>🗺️ By Commodity <span style="font-size:0.75rem;color:#86868b">(click to filter)</span>\';';
+    html += 'if (state.filters.months.length > 0) { out += \' <span class="sidebar-hide-link" onclick="toggleDashboardSidebar()">Hide «</span>\'; }';
+    html += 'out += \' <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M</span></h3><div class="dashboard-treemap">\';';
+    html += 'commSorted.forEach(function(entry, idx) {';
+    html += 'var comm = entry[0], value = entry[1];';
+    html += 'var pct = (value / total * 100);';
+    html += 'var size = Math.max(pct * 3, 12);'; // Direct percentage scaling, min 12%
+    html += 'out += \'<div class="treemap-item" style="width:\' + size + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
-    html += 'if (treemapView === "commodity" && state.filters.commodities.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear commodities (\' + state.filters.commodities.length + \')</button>\'; }';
-    html += 'if (treemapView === "customer" && state.filters.customers.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCustomerFilter()">✕ Clear: \' + state.filters.customers[0] + \'</button>\'; }';
+    html += 'if (state.filters.commodities.length > 0) { out += \'<button class="filter-clear-btn" onclick="clearCommodityFilter()">✕ Clear commodities (\' + state.filters.commodities.length + \')</button>\'; }';
     html += 'out += \'</div>\';';
     // Customer TY vs LY comparison tile (only show if YoY data exists)
     html += 'var hasYoYData = Object.keys(prevCustLookup).length > 0;';
@@ -4429,11 +4423,10 @@ function getHTML() {
     html += '});';
     html += 'out += \'</div></div>\';';
     html += '}';
-    // Top customers (using full data from API)
-    html += 'out += \'<div class="dashboard-card"><h3>👥 Top Customers <span style="font-size:0.75rem;color:#86868b">(click to filter)</span></h3><div class="dashboard-customers">\';';
-    html += 'var topCust = custSorted.slice(0, 8);';
-    html += 'var custTotal = topCust.reduce(function(a, e) { return a + e[1]; }, 0);';
-    html += 'topCust.forEach(function(entry, idx) {';
+    // All customers (scrollable list)
+    html += 'out += \'<div class="dashboard-card"><h3>👥 All Customers <span style="font-size:0.75rem;color:#86868b">(\' + custSorted.length + \' - click to filter)</span></h3><div class="dashboard-customers-scroll">\';';
+    html += 'var custTotal = custSorted.reduce(function(a, e) { return a + e[1]; }, 0);';
+    html += 'custSorted.forEach(function(entry, idx) {';
     html += 'var cust = entry[0], value = entry[1];';
     html += 'var pct = custTotal > 0 ? (value / custTotal * 100).toFixed(1) : 0;';
     html += 'out += \'<div class="customer-bar" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
@@ -4569,11 +4562,6 @@ function getHTML() {
     html += 'if (state.data) renderContent(state.data);';
     html += '}';
 
-    // Set treemap view (commodity or customer)
-    html += 'function setTreemapView(view) {';
-    html += 'state.treemapView = view;';
-    html += 'if (state.data) renderContent(state.data);';
-    html += '}';
 
     // Filter by month from dashboard timeline
     html += 'function filterByMonth(monthKey) {';
