@@ -3760,7 +3760,7 @@ function getHTML() {
     html += 'var iSrc = item.image_url || "";';
     html += 'if (iSrc) { var m = iSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (m) iSrc = "/api/image/" + m[1]; }';
     html += 'var fId = iSrc.startsWith("/api/image/") ? iSrc.replace("/api/image/", "") : "";';
-    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27); event.stopPropagation();">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showPOStyleDetail(\\x27\' + item.style_number + \'\\x27); event.stopPropagation();">\';';
     html += 'out += \'<div class="dashboard-style-img" style="height:100px">\';';
     html += 'if (iSrc) out += \'<img src="\' + iSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:1.5rem">👔</span>\';';
@@ -3775,7 +3775,7 @@ function getHTML() {
     // Single item - render normally
     html += 'var item = topItem;';
     html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
-    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showPOStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
     html += 'out += \'<div class="dashboard-style-img">\';';
     html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
@@ -3794,7 +3794,7 @@ function getHTML() {
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
     html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
-    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showPOStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
     html += 'out += \'<div class="dashboard-style-img">\';';
     html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
@@ -5105,6 +5105,36 @@ function getHTML() {
 
     // Close modal
     html += 'function closeModal() { document.getElementById("styleModal").classList.remove("active"); }';
+
+    // Show PO Style Detail modal (for Import POs)
+    html += 'async function showPOStyleDetail(styleNumber) {';
+    html += 'var item = state.data.items.find(function(i) { return i.style_number === styleNumber; });';
+    html += 'if (!item) return;';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc.includes("workdrive.zoho.com") || imgSrc.includes("download-accl.zoho.com")) {';
+    html += 'var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'document.getElementById("modalImage").src = imgSrc;';
+    html += 'document.getElementById("modalStyleName").textContent = item.style_name || item.style_number;';
+    html += 'document.getElementById("modalStyleNumber").textContent = item.style_number + (item.commodity ? " · " + item.commodity : "");';
+    html += 'document.getElementById("modalQty").textContent = formatNumber(item.total_qty);';
+    html += 'document.getElementById("modalDollars").textContent = formatNumber(Math.round(item.total_dollars));';
+    html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 0);';
+    html += 'document.getElementById("modalOrders").textContent = poCount;';
+    // Update the label to say "POs" instead of "Orders"
+    html += 'var ordersLabel = document.querySelector("#modalOrders").parentElement.querySelector(".modal-stat-label");';
+    html += 'if (ordersLabel) ordersLabel.textContent = "POs";';
+    html += 'var listTitle = document.querySelector("#modalOrdersList").parentElement.querySelector("h4");';
+    html += 'if (listTitle) listTitle.textContent = "Purchase Orders";';
+    // Build PO list
+    html += 'var posHtml = "";';
+    html += 'if (item.pos && item.pos.length > 0) {';
+    html += 'item.pos.forEach(function(po) {';
+    html += 'var date = po.po_warehouse_date ? new Date(po.po_warehouse_date).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
+    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
+    html += 'posHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(po.po_quantity || 0) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
+    html += '} else { posHtml = \'<div style="color:#86868b;font-size:0.875rem;padding:0.5rem 0">No PO details available</div>\'; }';
+    html += 'document.getElementById("modalOrdersList").innerHTML = posHtml;';
+    html += 'document.getElementById("styleModal").classList.add("active"); }';
 
     // Upload modal
     html += 'function showUploadModal() { document.getElementById("uploadModal").classList.add("active"); }';
