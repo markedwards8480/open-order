@@ -3079,8 +3079,8 @@ function getHTML() {
     html += '.timeline-units{color:#86868b;font-size:0.55rem}';
     html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:4px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer;margin-left:8px}';
     html += '.timeline-clear:hover{background:#d63030}';
-    html += '.timeline-year-divider{display:flex;align-items:center;padding:0 8px;margin:0 4px}';
-    html += '.timeline-year-divider span{background:#1e3a5f;color:white;padding:4px 10px;border-radius:12px;font-size:0.65rem;font-weight:700;white-space:nowrap}';
+    html += '.timeline-year-start{display:flex;align-items:center;padding:0 2px 0 8px}';
+    html += '.timeline-year-start span{background:#1e3a5f;color:white;padding:4px 8px;border-radius:4px 4px 4px 4px;font-size:0.6rem;font-weight:700;white-space:nowrap;writing-mode:horizontal-tb}';
     html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
     html += '.filter-clear-btn:hover{background:#d63030}';
     // YoY comparison styles
@@ -3545,7 +3545,7 @@ function getHTML() {
     html += 'var parts = m.month.split("-");';
     html += 'var year = parts[0];';
     html += 'var monthName = months[parseInt(parts[1])-1];';
-    html += 'if (prevYear && prevYear !== year) { out += \'<div class="timeline-year-divider"><span>\' + year + \'</span></div>\'; }';
+    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-start"><span>\' + year + \'</span></div>\'; }';
     html += 'prevYear = year;';
     html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
@@ -4329,8 +4329,7 @@ function getHTML() {
     html += 'var parts = monthKey.split("-");';
     html += 'var year = parts[0];';
     html += 'var monthName = months[parseInt(parts[1])-1];';
-    html += 'var yearShort = year.slice(2);';
-    html += 'if (prevYear && prevYear !== year) { out += \'<div class="timeline-year-divider"><span>\' + year + \'</span></div>\'; }';
+    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-start"><span>\' + year + \'</span></div>\'; }';
     html += 'prevYear = year;';
     html += 'var isActive = state.filters.months.indexOf(monthKey) !== -1;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
