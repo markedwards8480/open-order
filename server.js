@@ -3137,6 +3137,24 @@ function getHTML() {
     html += '.mini-style-num{font-size:0.6875rem;font-weight:600;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
     html += '.mini-style-value{font-size:0.625rem;color:#0088c2;font-weight:500}';
 
+    // Stacked tiles styles
+    html += '.style-stack{position:relative;cursor:pointer}';
+    html += '.style-stack .dashboard-style-card{position:relative;z-index:3}';
+    html += '.style-stack::before{content:"";position:absolute;top:4px;left:4px;right:-4px;bottom:-4px;background:#e0e0e0;border-radius:10px;z-index:1}';
+    html += '.style-stack::after{content:"";position:absolute;top:8px;left:8px;right:-8px;bottom:-8px;background:#c8c8c8;border-radius:10px;z-index:0}';
+    html += '.style-stack .stack-badge{position:absolute;top:-8px;right:-8px;background:#0088c2;color:white;font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:10px;z-index:10;box-shadow:0 2px 4px rgba(0,0,0,0.2)}';
+    html += '.style-stack:hover{transform:translateY(-2px)}';
+    html += '.style-stack.expanded{z-index:100}';
+    html += '.stack-expanded-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99;display:none}';
+    html += '.stack-expanded-overlay.visible{display:block}';
+    html += '.stack-expanded-container{position:absolute;top:0;left:0;display:none;flex-wrap:wrap;gap:0.5rem;background:white;padding:1rem;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.2);z-index:101;min-width:400px;max-width:600px}';
+    html += '.style-stack.expanded .stack-expanded-container{display:flex}';
+    html += '.stack-expanded-container .dashboard-style-card{flex:0 0 calc(50% - 0.25rem);margin:0}';
+    html += '.stack-expanded-header{width:100%;display:flex;justify-content:space-between;align-items:center;padding-bottom:0.75rem;border-bottom:1px solid #eee;margin-bottom:0.5rem}';
+    html += '.stack-expanded-title{font-weight:600;color:#1e3a5f;font-size:0.9rem}';
+    html += '.stack-expanded-close{background:none;border:none;font-size:1.25rem;cursor:pointer;color:#86868b;padding:0 0.25rem}';
+    html += '.stack-expanded-close:hover{color:#1e3a5f}';
+
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
     html += '.summary-table{width:100%;border-collapse:collapse;font-size:0.8125rem}';
@@ -3417,7 +3435,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, treemapView: "commodity" };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity" };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -4564,10 +4582,12 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">\';';
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
     html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + sortedItems.length + \' of \' + (data.stats ? data.stats.style_count : sortedItems.length) + \')</span></h3>\';';
+    html += 'out += \'<div style="display:flex;gap:0.5rem">\';';
+    html += 'out += \'<button class="group-toggle-btn\' + (state.stackByStyle ? " active" : "") + \'" onclick="toggleStackByStyle()">🎨 Stack Colors</button>\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.groupByCustomer ? " active" : "") + \'" onclick="toggleGroupByCustomer()">👥 Group by Customer</button>\';';
-    html += 'out += \'</div>\';';
+    html += 'out += \'</div></div>\';';
     // Grouped by customer view
     html += 'if (state.groupByCustomer) {';
     html += 'var customerStyles = {};';
@@ -4602,8 +4622,84 @@ function getHTML() {
     html += 'out += \'</div></div>\';';
     html += '});';
     html += '} else {';
-    // Normal ungrouped view
+    // Normal view - with optional stacking by base style
     html += 'out += \'<div class="dashboard-grid">\';';
+    html += 'if (state.stackByStyle) {';
+    // Group items by base style
+    html += 'var styleGroups = {};';
+    html += 'sortedItems.forEach(function(item) {';
+    html += 'var baseStyle = item.style_number.split("-")[0];';
+    html += 'if (!styleGroups[baseStyle]) styleGroups[baseStyle] = [];';
+    html += 'styleGroups[baseStyle].push(item);';
+    html += '});';
+    // Render groups - stacked if multiple, normal if single
+    html += 'var groupKeys = Object.keys(styleGroups).sort(function(a,b) {';
+    html += 'var aTotal = styleGroups[a].reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'var bTotal = styleGroups[b].reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'return bTotal - aTotal; });';
+    html += 'groupKeys.forEach(function(baseStyle) {';
+    html += 'var group = styleGroups[baseStyle];';
+    html += 'var topItem = group[0];';
+    html += 'var imgSrc = topItem.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
+    html += 'var totalDollars = group.reduce(function(s,i) { return s + (i.total_dollars || 0); }, 0);';
+    html += 'var totalUnits = group.reduce(function(s,i) { return s + (i.total_qty || 0); }, 0);';
+    html += 'var isExpanded = state.expandedStacks[baseStyle];';
+    html += 'if (group.length > 1) {';
+    // Render as stack
+    html += 'out += \'<div class="style-stack\' + (isExpanded ? " expanded" : "") + \'" data-base="\' + baseStyle + \'" onclick="toggleStack(\\x27\' + baseStyle + \'\\x27, event)">\';';
+    html += 'out += \'<span class="stack-badge">\' + group.length + \' colors</span>\';';
+    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name" style="font-weight:700">\' + baseStyle + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + group.length + \' color variants</div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (topItem.commodity || "-") + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(totalUnits) + \' units</span><span class="money">$\' + formatNumber(Math.round(totalDollars)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    // Expanded container with all variants
+    html += 'out += \'<div class="stack-expanded-container">\';';
+    html += 'out += \'<div class="stack-expanded-header"><span class="stack-expanded-title">🎨 \' + baseStyle + \' - \' + group.length + \' Colors</span><button class="stack-expanded-close" onclick="collapseStack(\\x27\' + baseStyle + \'\\x27, event)">×</button></div>\';';
+    html += 'group.forEach(function(item) {';
+    html += 'var iSrc = item.image_url || "";';
+    html += 'if (iSrc) { var m = iSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (m) iSrc = "/api/image/" + m[1]; }';
+    html += 'var fId = iSrc.startsWith("/api/image/") ? iSrc.replace("/api/image/", "") : "";';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27); event.stopPropagation();">\';';
+    html += 'out += \'<div class="dashboard-style-img" style="height:100px">\';';
+    html += 'if (iSrc) out += \'<img src="\' + iSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:1.5rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info" style="padding:0.5rem">\';';
+    html += 'out += \'<div class="dashboard-style-num" style="font-size:0.7rem">\' + item.style_number + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-stats" style="font-size:0.65rem"><span>\' + formatNumber(item.total_qty || 0) + \' u</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '} else {';
+    // Single item - render normally
+    html += 'var item = topItem;';
+    html += 'var orderCount = item.order_count || (item.orders ? item.orders.length : 1);';
+    html += 'var heatBadge = orderCount >= 3 ? "🔥" : (orderCount === 1 ? "❄️" : "");';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'if (heatBadge) out += \'<div class="heat-badge">\' + heatBadge + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-info">\';';
+    html += 'out += \'<div class="dashboard-style-name">\' + (item.style_name || item.style_number) + \'</div>\';';
+    html += 'out += \'<div class="dashboard-style-num">\' + item.style_number + \' <span style="color:#86868b;font-size:0.625rem">\' + orderCount + \' order\' + (orderCount !== 1 ? "s" : "") + \'</span></div>\';';
+    html += 'out += \'<div class="dashboard-style-comm">\' + (item.commodity || "-") + \'</div>\';';
+    html += 'var gm = calcGM(item);';
+    html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span><span class="gm-badge \' + gm.cls + \'" style="position:static;margin-left:auto;font-size:0.6rem">\' + gm.label + \'</span></div>\';';
+    html += 'out += \'</div></div>\';';
+    html += '}});';
+    html += '} else {';
+    // Original non-stacked view
     html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
@@ -4624,6 +4720,7 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span><span class="gm-badge \' + gm.cls + \'" style="position:static;margin-left:auto;font-size:0.6rem">\' + gm.label + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
     html += '});';
+    html += '}';
     html += 'out += \'</div>\';';
     html += '}';
     html += 'out += \'</div>\';'; // end dashboard-products
@@ -4678,6 +4775,32 @@ function getHTML() {
     html += 'function toggleGroupByVendor() {';
     html += 'state.groupByVendor = !state.groupByVendor;';
     html += 'if (state.data) renderPOContent(state.data);';
+    html += '}';
+
+    // Toggle stack by style in dashboard
+    html += 'function toggleStackByStyle() {';
+    html += 'state.stackByStyle = !state.stackByStyle;';
+    html += 'state.expandedStacks = {};'; // Reset expanded stacks
+    html += 'if (state.data) renderContent(state.data);';
+    html += '}';
+
+    // Toggle expand/collapse a style stack
+    html += 'function toggleStack(baseStyle, event) {';
+    html += 'event.stopPropagation();';
+    html += 'if (state.expandedStacks[baseStyle]) {';
+    html += 'delete state.expandedStacks[baseStyle];';
+    html += '} else {';
+    html += 'state.expandedStacks = {};'; // Close others first
+    html += 'state.expandedStacks[baseStyle] = true;';
+    html += '}';
+    html += 'if (state.data) renderContent(state.data);';
+    html += '}';
+
+    // Collapse a style stack (from close button)
+    html += 'function collapseStack(baseStyle, event) {';
+    html += 'event.stopPropagation();';
+    html += 'delete state.expandedStacks[baseStyle];';
+    html += 'if (state.data) renderContent(state.data);';
     html += '}';
 
     // Filter by vendor from Import POs dashboard (uses customer dropdown in PO mode)
