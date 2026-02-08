@@ -1559,12 +1559,23 @@ app.get('/api/po/orders', async function(req, res) {
             LIMIT 30
         `, params);
 
+        // Get monthly by commodity breakdown (for stacked bar chart)
+        var monthlyByCommodityResult = await pool.query(`
+            SELECT TO_CHAR(po_warehouse_date, 'YYYY-MM') as month, commodity, SUM(po_total) as total_dollars
+            FROM order_items
+            ${whereClause}
+            AND po_warehouse_date IS NOT NULL
+            GROUP BY TO_CHAR(po_warehouse_date, 'YYYY-MM'), commodity
+            ORDER BY TO_CHAR(po_warehouse_date, 'YYYY-MM'), commodity
+        `, params);
+
         res.json({
             items: itemsResult.rows,
             stats: statsResult.rows[0],
             vendorBreakdown: vendorResult.rows,
             commodityBreakdown: commodityResult.rows,
             monthlyBreakdown: monthlyResult.rows,
+            monthlyByCommodity: monthlyByCommodityResult.rows,
             colorBreakdown: colorResult.rows
         });
     } catch (err) {
@@ -3560,19 +3571,19 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-layout">\';';
     // Left sidebar - charts
     html += 'out += \'<div class="dashboard-charts">\';';
-    // Monthly trends stacked bar chart
+    // Monthly trends stacked bar chart - use monthlyByCommodity from API
     html += 'var monthlyByComm = {};';
     html += 'var allComms = {};';
-    html += 'items.forEach(function(item) {';
-    html += 'var comm = item.commodity || "Other";';
-    html += 'allComms[comm] = (allComms[comm] || 0) + (item.total_dollars || 0);';
-    html += 'if (item.pos) { item.pos.forEach(function(po) {';
-    html += 'var mk = po.eta_month || "Unknown";';
+    html += '(data.monthlyByCommodity || []).forEach(function(row) {';
+    html += 'var mk = row.month || "Unknown";';
+    html += 'var comm = row.commodity || "Other";';
+    html += 'var value = parseFloat(row.total_dollars) || 0;';
     html += 'if (!monthlyByComm[mk]) monthlyByComm[mk] = {};';
-    html += 'monthlyByComm[mk][comm] = (monthlyByComm[mk][comm] || 0) + (po.total_amount || 0);';
-    html += '}); }});';
+    html += 'monthlyByComm[mk][comm] = (monthlyByComm[mk][comm] || 0) + value;';
+    html += 'allComms[comm] = (allComms[comm] || 0) + value;';
+    html += '});';
     html += 'var topComms = Object.entries(allComms).sort(function(a,b) { return b[1] - a[1]; }).slice(0,5).map(function(e) { return e[0]; });';
-    html += 'var displayMonths = Object.keys(monthlyByComm).filter(function(m) { return m !== "Unknown"; }).sort();';
+    html += 'var displayMonths = Object.keys(monthlyByComm).filter(function(m) { return m !== "Unknown" && m; }).sort();';
     html += 'var displayMax = displayMonths.length > 0 ? Math.max.apply(null, displayMonths.map(function(m) { var md = monthlyByComm[m] || {}; return Object.values(md).reduce(function(a,v) { return a+v; }, 0); })) : 1;';
     html += 'out += \'<div class="dashboard-card"><h3>📊 Monthly Trends <span style="float:right;font-size:0.75rem;color:#34c759;font-weight:600">$\' + (total/1000000).toFixed(1) + \'M total</span></h3>\';';
     html += 'out += \'<div class="mini-stacked-container">\';';
@@ -3641,23 +3652,15 @@ function getHTML() {
     html += 'var vendorStyles = {};';
     html += 'var vendorTotals = {};';
     html += 'items.forEach(function(item) {';
-    html += 'if (item.pos) { item.pos.forEach(function(po) {';
-    html += 'var vend = po.vendor || "Unknown";';
+    html += 'if (item.pos && item.pos.length > 0) { item.pos.forEach(function(po) {';
+    html += 'var vend = po.vendor_name || "Unknown";';
     html += 'if (!vendorStyles[vend]) { vendorStyles[vend] = {}; vendorTotals[vend] = { dollars: 0, units: 0 }; }';
     html += 'if (!vendorStyles[vend][item.style_number]) { vendorStyles[vend][item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0 }; }';
-    html += 'vendorStyles[vend][item.style_number].total_qty += po.quantity || 0;';
-    html += 'vendorStyles[vend][item.style_number].total_dollars += po.total_amount || 0;';
-    html += 'vendorTotals[vend].dollars += po.total_amount || 0;';
-    html += 'vendorTotals[vend].units += po.quantity || 0;';
-    html += '}); } else {';
-    html += 'var vend = item.vendor || "Unknown";';
-    html += 'if (!vendorStyles[vend]) { vendorStyles[vend] = {}; vendorTotals[vend] = { dollars: 0, units: 0 }; }';
-    html += 'if (!vendorStyles[vend][item.style_number]) { vendorStyles[vend][item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0 }; }';
-    html += 'vendorStyles[vend][item.style_number].total_qty += item.total_qty || 0;';
-    html += 'vendorStyles[vend][item.style_number].total_dollars += item.total_dollars || 0;';
-    html += 'vendorTotals[vend].dollars += item.total_dollars || 0;';
-    html += 'vendorTotals[vend].units += item.total_qty || 0;';
-    html += '}});';
+    html += 'vendorStyles[vend][item.style_number].total_qty += parseFloat(po.po_quantity) || 0;';
+    html += 'vendorStyles[vend][item.style_number].total_dollars += parseFloat(po.po_total) || 0;';
+    html += 'vendorTotals[vend].dollars += parseFloat(po.po_total) || 0;';
+    html += 'vendorTotals[vend].units += parseFloat(po.po_quantity) || 0;';
+    html += '}); }});';
     html += 'var sortedVendors = Object.keys(vendorTotals).sort(function(a,b) { return vendorTotals[b].dollars - vendorTotals[a].dollars; });';
     html += 'sortedVendors.forEach(function(vend) {';
     html += 'var styles = Object.values(vendorStyles[vend]).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
@@ -4674,7 +4677,7 @@ function getHTML() {
     // Toggle group by vendor in Import POs dashboard
     html += 'function toggleGroupByVendor() {';
     html += 'state.groupByVendor = !state.groupByVendor;';
-    html += 'if (state.data) renderContent(state.data);';
+    html += 'if (state.data) renderPOContent(state.data);';
     html += '}';
 
     // Filter by vendor from Import POs dashboard
