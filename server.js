@@ -3079,6 +3079,8 @@ function getHTML() {
     html += '.timeline-units{color:#86868b;font-size:0.55rem}';
     html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:4px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer;margin-left:8px}';
     html += '.timeline-clear:hover{background:#d63030}';
+    html += '.timeline-year-divider{display:flex;align-items:center;padding:0 8px;margin:0 4px}';
+    html += '.timeline-year-divider span{background:#1e3a5f;color:white;padding:4px 10px;border-radius:12px;font-size:0.65rem;font-weight:700;white-space:nowrap}';
     html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
     html += '.filter-clear-btn:hover{background:#d63030}';
     // YoY comparison styles
@@ -3537,12 +3539,15 @@ function getHTML() {
     // Month timeline
     html += 'out += \'<div class="dashboard-timeline"><span class="timeline-title">📅 ETA Months:</span><div class="timeline-bars">\';';
     html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'var prevYear = null;';
     html += 'monthlyData.forEach(function(m) {';
     html += 'if (!m.month) return;';
     html += 'var parts = m.month.split("-");';
+    html += 'var year = parts[0];';
     html += 'var monthName = months[parseInt(parts[1])-1];';
-    html += 'var yearShort = parts[0].slice(2);';
-    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + " \\x27" + yearShort + \'</span></div>\';';
+    html += 'if (prevYear && prevYear !== year) { out += \'<div class="timeline-year-divider"><span>\' + year + \'</span></div>\'; }';
+    html += 'prevYear = year;';
+    html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div></div>\';';
@@ -4318,14 +4323,18 @@ function getHTML() {
     // Month timeline - compact single row
     html += 'out += \'<div class="dashboard-timeline"><span class="timeline-title">📅 Months:</span><div class="timeline-bars">\';';
     html += 'var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'var prevYear = null;';
     html += 'sortedMonths.forEach(function(monthKey) {';
     html += 'var data = monthlyData[monthKey];';
     html += 'var parts = monthKey.split("-");';
+    html += 'var year = parts[0];';
     html += 'var monthName = months[parseInt(parts[1])-1];';
-    html += 'var yearShort = parts[0].slice(2);';
+    html += 'var yearShort = year.slice(2);';
+    html += 'if (prevYear && prevYear !== year) { out += \'<div class="timeline-year-divider"><span>\' + year + \'</span></div>\'; }';
+    html += 'prevYear = year;';
     html += 'var isActive = state.filters.months.indexOf(monthKey) !== -1;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
-    html += 'out += \'<div class="timeline-bar"><span class="bar-month">\' + monthName + \' \\x27\' + yearShort + \'</span></div>\';';
+    html += 'out += \'<div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(data.dollars/1000).toLocaleString() + \'K</span></div></div>\';';
     html += '});';
     html += 'out += \'</div>\';';
