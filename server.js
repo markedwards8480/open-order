@@ -3760,7 +3760,7 @@ function getHTML() {
     html += 'var iSrc = item.image_url || "";';
     html += 'if (iSrc) { var m = iSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (m) iSrc = "/api/image/" + m[1]; }';
     html += 'var fId = iSrc.startsWith("/api/image/") ? iSrc.replace("/api/image/", "") : "";';
-    html += 'out += \'<div class="dashboard-style-card" onclick="event.stopPropagation();">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27); event.stopPropagation();">\';';
     html += 'out += \'<div class="dashboard-style-img" style="height:100px">\';';
     html += 'if (iSrc) out += \'<img src="\' + iSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:1.5rem">👔</span>\';';
@@ -3775,7 +3775,7 @@ function getHTML() {
     // Single item - render normally
     html += 'var item = topItem;';
     html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
-    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
     html += 'out += \'<div class="dashboard-style-img">\';';
     html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
@@ -3794,7 +3794,7 @@ function getHTML() {
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
     html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 1);';
-    html += 'out += \'<div class="dashboard-style-card">\';';
+    html += 'out += \'<div class="dashboard-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
     html += 'out += \'<div class="dashboard-style-img">\';';
     html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
     html += 'else out += \'<span style="color:#ccc;font-size:2rem">👔</span>\';';
