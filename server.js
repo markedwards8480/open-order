@@ -3564,6 +3564,7 @@ function getHTML() {
     html += 'else if (state.view === "styles") { renderPOStyles(container, data); }';
     html += 'else if (state.view === "orders") { renderPOByVendor(container, data); }';
     html += 'else if (state.view === "summary") { renderPOSummary(container, data); }';
+    html += 'else if (state.view === "charts") { renderPOCharts(container, data); }';
     html += 'else { renderPODashboard(container, data); }';
     html += '} catch(e) { console.error("PO Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
 
@@ -3916,6 +3917,104 @@ function getHTML() {
     html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(commData[comm].total) + \'</span></div></td></tr>\';';
     html += '});';
     html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
+
+    // PO Charts view - dedicated charts page
+    html += 'function renderPOCharts(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    html += 'var colors = ["#1e3a5f", "#0088c2", "#4da6d9", "#34c759", "#ff9500", "#ff3b30", "#af52de", "#5856d6", "#00c7be", "#86868b"];';
+    html += 'var commData = data.commodityBreakdown || [];';
+    html += 'var vendorData = data.vendorBreakdown || [];';
+    html += 'var monthlyData = data.monthlyBreakdown || [];';
+    html += 'var out = \'<div style="padding:1rem"><h2 style="color:#1e3a5f;margin-bottom:1.5rem">📈 Import PO Analytics</h2>\';';
+    html += 'out += \'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:1.5rem">\';';
+    // Chart 1: Avg Cost/Unit by Commodity
+    html += 'out += \'<div class="dashboard-card" style="padding:1.5rem"><h3 style="margin-bottom:1rem">💰 Avg Cost/Unit by Commodity</h3>\';';
+    html += 'var avgByComm = commData.map(function(c) {';
+    html += 'var qty = parseFloat(c.total_qty) || 0;';
+    html += 'var dollars = parseFloat(c.total_dollars) || 0;';
+    html += 'return { name: c.commodity || "Other", avgPrice: qty > 0 ? dollars / qty : 0, qty: qty, dollars: dollars };';
+    html += '}).filter(function(d) { return d.avgPrice > 0; }).sort(function(a,b) { return b.avgPrice - a.avgPrice; });';
+    html += 'var maxCommPrice = avgByComm.length > 0 ? Math.max.apply(null, avgByComm.map(function(d) { return d.avgPrice; })) : 1;';
+    html += 'out += \'<div style="display:flex;flex-direction:column;gap:10px">\';';
+    html += 'avgByComm.forEach(function(d, idx) {';
+    html += 'var barWidth = maxCommPrice > 0 ? (d.avgPrice / maxCommPrice * 100) : 0;';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:12px">\';';
+    html += 'out += \'<div style="width:100px;font-size:0.8rem;color:#1e3a5f;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\' + d.name + \'">\' + d.name + \'</div>\';';
+    html += 'out += \'<div style="flex:1;height:24px;background:#f0f0f0;border-radius:6px;overflow:hidden">\';';
+    html += 'out += \'<div style="height:100%;width:\' + barWidth + \'%;background:\' + colors[idx % colors.length] + \';display:flex;align-items:center;justify-content:flex-end;padding-right:8px;min-width:60px">\';';
+    html += 'out += \'<span style="font-size:0.75rem;color:white;font-weight:700">$\' + d.avgPrice.toFixed(2) + \'</span>\';';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'<div style="width:70px;font-size:0.7rem;color:#86868b;text-align:right">\' + Math.round(d.qty/1000) + \'K units</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    // Chart 2: Avg Cost/Unit by Vendor
+    html += 'out += \'<div class="dashboard-card" style="padding:1.5rem"><h3 style="margin-bottom:1rem">🏭 Avg Cost/Unit by Vendor</h3>\';';
+    html += 'var avgByVendor = vendorData.map(function(v) {';
+    html += 'var qty = parseFloat(v.total_qty) || 0;';
+    html += 'var dollars = parseFloat(v.total_dollars) || 0;';
+    html += 'return { name: v.vendor_name || "Unknown", avgPrice: qty > 0 ? dollars / qty : 0, qty: qty, dollars: dollars };';
+    html += '}).filter(function(d) { return d.avgPrice > 0; }).sort(function(a,b) { return b.avgPrice - a.avgPrice; }).slice(0,10);';
+    html += 'var maxVendorPrice = avgByVendor.length > 0 ? Math.max.apply(null, avgByVendor.map(function(d) { return d.avgPrice; })) : 1;';
+    html += 'out += \'<div style="display:flex;flex-direction:column;gap:10px">\';';
+    html += 'avgByVendor.forEach(function(d, idx) {';
+    html += 'var barWidth = maxVendorPrice > 0 ? (d.avgPrice / maxVendorPrice * 100) : 0;';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:12px">\';';
+    html += 'out += \'<div style="width:120px;font-size:0.75rem;color:#1e3a5f;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\' + d.name + \'">\' + d.name + \'</div>\';';
+    html += 'out += \'<div style="flex:1;height:24px;background:#f0f0f0;border-radius:6px;overflow:hidden">\';';
+    html += 'out += \'<div style="height:100%;width:\' + barWidth + \'%;background:\' + colors[idx % colors.length] + \';display:flex;align-items:center;justify-content:flex-end;padding-right:8px;min-width:60px">\';';
+    html += 'out += \'<span style="font-size:0.75rem;color:white;font-weight:700">$\' + d.avgPrice.toFixed(2) + \'</span>\';';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'<div style="width:70px;font-size:0.7rem;color:#86868b;text-align:right">\' + Math.round(d.qty/1000) + \'K units</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    // Chart 3: Monthly Value & Volume
+    html += 'out += \'<div class="dashboard-card" style="padding:1.5rem"><h3 style="margin-bottom:1rem">📅 Monthly PO Value</h3>\';';
+    html += 'var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];';
+    html += 'var maxMonthVal = monthlyData.length > 0 ? Math.max.apply(null, monthlyData.map(function(m) { return parseFloat(m.total_dollars) || 0; })) : 1;';
+    html += 'out += \'<div style="display:flex;align-items:flex-end;gap:8px;height:200px;padding-top:20px">\';';
+    html += 'monthlyData.forEach(function(m, idx) {';
+    html += 'var val = parseFloat(m.total_dollars) || 0;';
+    html += 'var barHeight = maxMonthVal > 0 ? (val / maxMonthVal * 100) : 0;';
+    html += 'var parts = (m.month || "").split("-");';
+    html += 'var label = parts.length === 2 ? monthNames[parseInt(parts[1])-1] + " \\x27" + parts[0].slice(2) : m.month;';
+    html += 'out += \'<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%">\';';
+    html += 'out += \'<div style="flex:1;width:100%;display:flex;align-items:flex-end">\';';
+    html += 'out += \'<div style="width:100%;height:\' + barHeight + \'%;background:\' + colors[idx % colors.length] + \';border-radius:4px 4px 0 0;min-height:4px" title="$\' + Math.round(val/1000) + \'K"></div>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div style="font-size:0.6rem;color:#86868b;margin-top:4px;white-space:nowrap">\' + label + \'</div>\';';
+    html += 'out += \'<div style="font-size:0.6rem;color:#0088c2;font-weight:600">$\' + Math.round(val/1000) + \'K</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    // Chart 4: Monthly Avg Price Trend
+    html += 'out += \'<div class="dashboard-card" style="padding:1.5rem"><h3 style="margin-bottom:1rem">📊 Monthly Avg Cost/Unit Trend</h3>\';';
+    html += 'var monthlyAvg = monthlyData.map(function(m) {';
+    html += 'var qty = parseFloat(m.total_qty) || 0;';
+    html += 'var dollars = parseFloat(m.total_dollars) || 0;';
+    html += 'return { month: m.month, avgPrice: qty > 0 ? dollars / qty : 0 };';
+    html += '}).filter(function(d) { return d.avgPrice > 0; });';
+    html += 'var maxAvg = monthlyAvg.length > 0 ? Math.max.apply(null, monthlyAvg.map(function(d) { return d.avgPrice; })) : 1;';
+    html += 'var minAvg = monthlyAvg.length > 0 ? Math.min.apply(null, monthlyAvg.map(function(d) { return d.avgPrice; })) : 0;';
+    html += 'var range = maxAvg - minAvg || 1;';
+    html += 'out += \'<div style="display:flex;align-items:flex-end;gap:8px;height:200px;padding-top:20px">\';';
+    html += 'monthlyAvg.forEach(function(d, idx) {';
+    html += 'var barHeight = range > 0 ? ((d.avgPrice - minAvg) / range * 80 + 20) : 50;';
+    html += 'var parts = (d.month || "").split("-");';
+    html += 'var label = parts.length === 2 ? monthNames[parseInt(parts[1])-1] + " \\x27" + parts[0].slice(2) : d.month;';
+    html += 'out += \'<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%">\';';
+    html += 'out += \'<div style="flex:1;width:100%;display:flex;align-items:flex-end">\';';
+    html += 'out += \'<div style="width:100%;height:\' + barHeight + \'%;background:linear-gradient(to top, #0088c2, #4da6d9);border-radius:4px 4px 0 0" title="$\' + d.avgPrice.toFixed(2) + \'"></div>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div style="font-size:0.6rem;color:#86868b;margin-top:4px;white-space:nowrap">\' + label + \'</div>\';';
+    html += 'out += \'<div style="font-size:0.65rem;color:#0088c2;font-weight:600">$\' + d.avgPrice.toFixed(2) + \'</div>\';';
+    html += 'out += \'</div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div></div>\';';
     html += 'container.innerHTML = out; }';
 
     // Render content
@@ -5508,7 +5607,7 @@ function getHTML() {
     html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "none");';
     html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "none");';
     // Update view toggle for PO mode
-    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button>\';';
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button><button class="view-btn" data-view="charts">📈 Charts</button>\';';
     html += 'bindViewToggle();';
     html += '} else {';
     html += 'document.getElementById("dashboardTitle").textContent = "Open Orders";';
