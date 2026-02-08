@@ -4680,13 +4680,13 @@ function getHTML() {
     html += 'if (state.data) renderPOContent(state.data);';
     html += '}';
 
-    // Filter by vendor from Import POs dashboard
+    // Filter by vendor from Import POs dashboard (uses customer dropdown in PO mode)
     html += 'function filterByVendor(vend) {';
-    html += 'var checkboxes = document.querySelectorAll("#vendorOptions input[type=checkbox]");';
+    html += 'var checkboxes = document.querySelectorAll("#customerOptions input[type=checkbox]");';
     html += 'checkboxes.forEach(function(cb) { cb.checked = cb.value === vend; });';
-    html += 'state.filters.vendors = [vend];';
-    html += 'document.getElementById("vendorDisplay").textContent = vend;';
-    html += 'document.querySelector("#vendorMultiSelect .multi-select-display").classList.add("active");';
+    html += 'state.filters.customers = [vend];';
+    html += 'document.getElementById("customerDisplay").textContent = vend;';
+    html += 'document.querySelector("#customerMultiSelect .multi-select-display").classList.add("active");';
     html += 'updateClearButton();';
     html += 'loadData(); }';
 
