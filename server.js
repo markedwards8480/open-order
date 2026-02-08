@@ -3033,12 +3033,14 @@ function getHTML() {
     html += '.legend-item{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:#666;cursor:pointer;padding:2px 4px;border-radius:3px}';
     html += '.legend-item:hover{background:#f0f4f8}';
     html += '.legend-color{width:10px;height:10px;border-radius:2px}';
-    html += '.dashboard-treemap{display:flex;flex-wrap:wrap;gap:4px}';
-    html += '.treemap-item{padding:8px;color:white;border-radius:6px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-width:50px;box-sizing:border-box}';
+    html += '.dashboard-treemap{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px}';
+    html += '.treemap-item{padding:10px;color:white;border-radius:8px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;min-height:60px;display:flex;flex-direction:column;justify-content:center}';
     html += '.treemap-item:hover{transform:scale(1.03);box-shadow:0 4px 12px rgba(0,0,0,0.15)}';
-    html += '.treemap-label{font-weight:600;font-size:0.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
-    html += '.treemap-value{font-size:0.8125rem;opacity:0.9}';
-    html += '.treemap-pct{font-size:0.6875rem;opacity:0.7}';
+    html += '.treemap-item.large{grid-column:span 2;grid-row:span 2;min-height:120px}';
+    html += '.treemap-item.medium{grid-column:span 2;min-height:60px}';
+    html += '.treemap-label{font-weight:600;font-size:0.8125rem;line-height:1.2}';
+    html += '.treemap-value{font-size:0.875rem;opacity:0.95;margin-top:4px}';
+    html += '.treemap-pct{font-size:0.75rem;opacity:0.8}';
     html += '.treemap-header{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap}';
     html += '.treemap-header h3{margin:0;flex-shrink:0}';
     html += '.treemap-toggle{display:flex;background:#f0f0f0;border-radius:6px;padding:2px;margin-left:auto}';
@@ -4396,8 +4398,8 @@ function getHTML() {
     html += 'commSorted.forEach(function(entry, idx) {';
     html += 'var comm = entry[0], value = entry[1];';
     html += 'var pct = (value / total * 100);';
-    html += 'var size = Math.max(pct * 3, 12);'; // Direct percentage scaling, min 12%
-    html += 'out += \'<div class="treemap-item" style="width:\' + size + \'%;background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
+    html += 'var sizeClass = pct >= 15 ? "large" : (pct >= 8 ? "medium" : "");';
+    html += 'out += \'<div class="treemap-item \' + sizeClass + \'" style="background:\' + colors[idx % colors.length] + \'" onclick="filterByCommodity(\\x27\' + comm.replace(/\'/g, "\\\\\'") + \'\\x27)">\';';
     html += 'out += \'<div class="treemap-label">\' + comm + \'</div>\';';
     html += 'out += \'<div class="treemap-value">$\' + Math.round(value/1000).toLocaleString() + \'K</div>\';';
     html += 'out += \'<div class="treemap-pct">\' + pct.toFixed(1) + \'%</div></div>\';';
