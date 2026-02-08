@@ -3096,6 +3096,25 @@ function getHTML() {
     html += '.heat-badge{position:absolute;top:4px;right:4px;font-size:1rem;z-index:1}';
     html += '.dashboard-style-card{position:relative}';
 
+    // Group by customer toggle and styles
+    html += '.group-toggle-btn{padding:0.5rem 1rem;border-radius:8px;border:1px solid #e5e5e5;background:white;font-size:0.8125rem;color:#1e3a5f;cursor:pointer;transition:all 0.2s}';
+    html += '.group-toggle-btn:hover{background:#f5f5f7;border-color:#0088c2}';
+    html += '.group-toggle-btn.active{background:#0088c2;color:white;border-color:#0088c2}';
+    html += '.customer-group{margin-bottom:1.5rem;background:white;border-radius:12px;border:1px solid #e5e5e5;overflow:hidden}';
+    html += '.customer-group-header{padding:1rem 1.25rem;background:linear-gradient(135deg,#1e3a5f 0%,#2d5a87 100%);color:white;display:flex;justify-content:space-between;align-items:center;cursor:pointer}';
+    html += '.customer-group-header:hover{background:linear-gradient(135deg,#2d5a87 0%,#0088c2 100%)}';
+    html += '.customer-group-name{font-weight:600;font-size:1rem}';
+    html += '.customer-group-stats{font-size:0.8125rem;opacity:0.9}';
+    html += '.customer-group-stats .money{color:#4da6d9;font-weight:600}';
+    html += '.customer-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:0.5rem;padding:1rem}';
+    html += '.mini-style-card{background:#f9fafb;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s}';
+    html += '.mini-style-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}';
+    html += '.mini-style-img{width:100%;aspect-ratio:1;background:#f0f0f0;display:flex;align-items:center;justify-content:center;overflow:hidden}';
+    html += '.mini-style-img img{width:100%;height:100%;object-fit:cover}';
+    html += '.mini-style-info{padding:0.5rem;text-align:center}';
+    html += '.mini-style-num{font-size:0.6875rem;font-weight:600;color:#1e3a5f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+    html += '.mini-style-value{font-size:0.625rem;color:#0088c2;font-weight:500}';
+
     // Summary matrix table
     html += '.summary-container{background:white;border-radius:16px;padding:1.5rem;overflow-x:auto}';
     html += '.summary-table{width:100%;border-collapse:collapse;font-size:0.8125rem}';
@@ -3376,7 +3395,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {} };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -4427,7 +4446,45 @@ function getHTML() {
     html += 'out += \'</div>\';'; // end dashboard-charts
     // Right column - top products
     html += 'out += \'<div class="dashboard-products">\';';
-    html += 'out += \'<h3 style="margin:0 0 1rem 0;color:#1e3a5f">📦 Top Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + sortedItems.length + \' of \' + (data.stats ? data.stats.style_count : sortedItems.length) + \')</span></h3>\';';
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">\';';
+    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + sortedItems.length + \' of \' + (data.stats ? data.stats.style_count : sortedItems.length) + \')</span></h3>\';';
+    html += 'out += \'<button class="group-toggle-btn\' + (state.groupByCustomer ? " active" : "") + \'" onclick="toggleGroupByCustomer()">👥 Group by Customer</button>\';';
+    html += 'out += \'</div>\';';
+    // Grouped by customer view
+    html += 'if (state.groupByCustomer) {';
+    html += 'var customerStyles = {};';
+    html += 'var customerTotals = {};';
+    html += 'sortedItems.forEach(function(item) {';
+    html += 'if (item.orders) { item.orders.forEach(function(o) {';
+    html += 'var cust = o.customer || "Unknown";';
+    html += 'if (!customerStyles[cust]) { customerStyles[cust] = {}; customerTotals[cust] = { dollars: 0, units: 0 }; }';
+    html += 'if (!customerStyles[cust][item.style_number]) { customerStyles[cust][item.style_number] = { style_number: item.style_number, style_name: item.style_name, commodity: item.commodity, image_url: item.image_url, total_qty: 0, total_dollars: 0 }; }';
+    html += 'customerStyles[cust][item.style_number].total_qty += o.quantity || 0;';
+    html += 'customerStyles[cust][item.style_number].total_dollars += o.total_amount || 0;';
+    html += 'customerTotals[cust].dollars += o.total_amount || 0;';
+    html += 'customerTotals[cust].units += o.quantity || 0;';
+    html += '}); }});';
+    html += 'var sortedCustomers = Object.keys(customerTotals).sort(function(a,b) { return customerTotals[b].dollars - customerTotals[a].dollars; });';
+    html += 'sortedCustomers.forEach(function(cust) {';
+    html += 'var styles = Object.values(customerStyles[cust]).sort(function(a,b) { return b.total_dollars - a.total_dollars; });';
+    html += 'var totals = customerTotals[cust];';
+    html += 'out += \'<div class="customer-group"><div class="customer-group-header" onclick="filterByCustomer(\\x27\' + cust.replace(/\'/g, "\\\\\'") + \'\\x27)"><span class="customer-group-name">👤 \' + cust + \'</span><span class="customer-group-stats">\' + styles.length + \' styles · \' + formatNumber(totals.units) + \' units · <span class="money">$\' + formatNumber(Math.round(totals.dollars)) + \'</span></span></div>\';';
+    html += 'out += \'<div class="customer-group-grid">\';';
+    html += 'styles.forEach(function(item) {';
+    html += 'var imgSrc = item.image_url || "";';
+    html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
+    html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
+    html += 'out += \'<div class="mini-style-card" onclick="showStyleDetail(\\x27\' + item.style_number + \'\\x27)">\';';
+    html += 'out += \'<div class="mini-style-img">\';';
+    html += 'if (imgSrc) out += \'<img src="\' + imgSrc + \'" alt="" loading="lazy" onerror="handleImgError(this,\\x27\' + fileId + \'\\x27)">\';';
+    html += 'else out += \'<span style="color:#ccc;font-size:1.25rem">👔</span>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'<div class="mini-style-info"><div class="mini-style-num">\' + item.style_number + \'</div><div class="mini-style-value">$\' + formatNumber(Math.round(item.total_dollars)) + \'</div></div></div>\';';
+    html += '});';
+    html += 'out += \'</div></div>\';';
+    html += '});';
+    html += '} else {';
+    // Normal ungrouped view
     html += 'out += \'<div class="dashboard-grid">\';';
     html += 'sortedItems.forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
@@ -4449,7 +4506,9 @@ function getHTML() {
     html += 'out += \'<div class="dashboard-style-stats"><span>\' + formatNumber(item.total_qty || 0) + \' units</span><span class="money">$\' + formatNumber(Math.round(item.total_dollars || 0)) + \'</span><span class="gm-badge \' + gm.cls + \'" style="position:static;margin-left:auto;font-size:0.6rem">\' + gm.label + \'</span></div>\';';
     html += 'out += \'</div></div>\';';
     html += '});';
-    html += 'out += \'</div></div>\';'; // end dashboard-products
+    html += 'out += \'</div>\';';
+    html += '}';
+    html += 'out += \'</div>\';'; // end dashboard-products
     html += 'out += \'</div>\';'; // end dashboard-layout
     html += 'container.innerHTML = out;';
     // Scroll stacked bar to current month
@@ -4489,6 +4548,12 @@ function getHTML() {
     html += 'state.sidebarCollapsed = !state.sidebarCollapsed;';
     html += 'var layout = document.getElementById("dashboardLayout");';
     html += 'if (layout) layout.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);';
+    html += '}';
+
+    // Toggle group by customer in dashboard
+    html += 'function toggleGroupByCustomer() {';
+    html += 'state.groupByCustomer = !state.groupByCustomer;';
+    html += 'if (state.data) renderContent(state.data);';
     html += '}';
 
     // Filter by month from dashboard timeline
