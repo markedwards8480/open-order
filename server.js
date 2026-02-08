@@ -5118,17 +5118,27 @@ function getHTML() {
     html += 'document.getElementById("modalStyleNumber").textContent = item.style_number + (item.commodity ? " · " + item.commodity : "");';
     html += 'document.getElementById("modalQty").textContent = formatNumber(item.total_qty);';
     html += 'document.getElementById("modalDollars").textContent = formatNumber(Math.round(item.total_dollars));';
-    html += 'var poCount = item.po_count || (item.pos ? item.pos.length : 0);';
+    // Dedupe POs by po_number - consolidate duplicates
+    html += 'var poMap = {};';
+    html += 'if (item.pos && item.pos.length > 0) {';
+    html += 'item.pos.forEach(function(po) {';
+    html += 'var key = (po.po_number || "") + "|" + (po.color || "");';
+    html += 'if (!poMap[key]) { poMap[key] = { po_number: po.po_number, vendor_name: po.vendor_name, color: po.color, po_warehouse_date: po.po_warehouse_date, po_quantity: 0, po_total: 0 }; }';
+    html += 'poMap[key].po_quantity += parseFloat(po.po_quantity) || 0;';
+    html += 'poMap[key].po_total += parseFloat(po.po_total) || 0;';
+    html += '}); }';
+    html += 'var uniquePOs = Object.values(poMap);';
+    html += 'var poCount = uniquePOs.length;';
     html += 'document.getElementById("modalOrders").textContent = poCount;';
     // Update the label to say "POs" instead of "Orders"
     html += 'var ordersLabel = document.querySelector("#modalOrders").parentElement.querySelector(".modal-stat-label");';
     html += 'if (ordersLabel) ordersLabel.textContent = "POs";';
     html += 'var listTitle = document.querySelector("#modalOrdersList").parentElement.querySelector("h4");';
     html += 'if (listTitle) listTitle.textContent = "Purchase Orders";';
-    // Build PO list
+    // Build PO list from deduplicated data
     html += 'var posHtml = "";';
-    html += 'if (item.pos && item.pos.length > 0) {';
-    html += 'item.pos.forEach(function(po) {';
+    html += 'if (uniquePOs.length > 0) {';
+    html += 'uniquePOs.forEach(function(po) {';
     html += 'var date = po.po_warehouse_date ? new Date(po.po_warehouse_date).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
     html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
     html += 'posHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(po.po_quantity || 0) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
