@@ -3064,25 +3064,25 @@ function getHTML() {
     html += '.dashboard-style-comm{font-size:0.625rem;color:#0088c2;margin-top:2px}';
     html += '.dashboard-style-stats{display:flex;justify-content:space-between;margin-top:4px;font-size:0.6875rem;color:#666}';
     html += '.dashboard-style-stats .money{color:#34c759;font-weight:600}';
-    // Dashboard timeline - compact single row
-    html += '.dashboard-timeline{background:white;border-radius:12px;padding:0.5rem 1rem;margin-bottom:0.75rem;border:1px solid rgba(0,0,0,0.04);display:flex;align-items:center;gap:0.75rem}';
-    html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.8rem;white-space:nowrap}';
-    html += '.timeline-bars{display:flex;gap:4px;flex:1}';
-    html += '.timeline-month{flex:1;cursor:pointer;transition:transform 0.15s}';
-    html += '.timeline-month:hover{transform:scale(1.03)}';
+    // Dashboard timeline - ultra-compact single row
+    html += '.dashboard-timeline{background:white;border-radius:8px;padding:0.35rem 0.6rem;margin-bottom:0.5rem;border:1px solid rgba(0,0,0,0.04);display:flex;align-items:center;gap:0.5rem}';
+    html += '.timeline-title{font-weight:600;color:#1e3a5f;font-size:0.65rem;white-space:nowrap}';
+    html += '.timeline-bars{display:flex;gap:2px;flex:1;align-items:center}';
+    html += '.timeline-month{cursor:pointer;transition:all 0.15s}';
+    html += '.timeline-month:hover{transform:scale(1.05)}';
     html += '.timeline-month.active .timeline-bar{background:#1e3a5f}';
-    html += '.timeline-bar{background:#0088c2;border-radius:4px;padding:6px 4px;text-align:center}';
-    html += '.bar-month{color:white;font-weight:600;font-size:0.7rem}';
-    html += '.bar-year{color:rgba(255,255,255,0.8);font-size:0.6rem}';
-    html += '.timeline-stats{font-size:0.6rem;color:#666;text-align:center;margin-top:2px}';
+    html += '.timeline-bar{background:#0088c2;border-radius:3px;padding:2px 4px;text-align:center;min-width:24px}';
+    html += '.bar-month{color:white;font-weight:600;font-size:0.55rem}';
+    html += '.bar-year{color:rgba(255,255,255,0.8);font-size:0.5rem}';
+    html += '.timeline-stats{font-size:0.45rem;color:#888;text-align:center;margin-top:1px;line-height:1}';
     html += '.timeline-dollars{color:#1e3a5f;font-weight:600}';
-    html += '.timeline-units{color:#86868b;font-size:0.55rem}';
-    html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:4px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer;margin-left:8px}';
+    html += '.timeline-units{color:#86868b;font-size:0.45rem}';
+    html += '.timeline-clear{background:#ff3b30;color:white;border:none;padding:2px 6px;border-radius:3px;font-size:0.55rem;cursor:pointer;margin-left:4px}';
     html += '.timeline-clear:hover{background:#d63030}';
-    html += '.timeline-year-group{display:flex;flex-direction:column;align-items:stretch;margin-left:8px}';
+    html += '.timeline-year-group{display:flex;align-items:center;margin-left:6px;gap:1px}';
     html += '.timeline-year-group:first-child{margin-left:0}';
-    html += '.timeline-year-label{background:#1e3a5f;color:white;padding:2px 0;text-align:center;font-size:0.6rem;font-weight:700;border-radius:4px 4px 0 0}';
-    html += '.timeline-year-months{display:flex;gap:2px;background:#e8f4fc;padding:3px;border-radius:0 0 4px 4px}';
+    html += '.timeline-year-label{background:#6b7280;color:white;padding:1px 4px;font-size:0.5rem;font-weight:700;border-radius:3px;margin-right:2px;writing-mode:horizontal-tb}';
+    html += '.timeline-year-months{display:flex;gap:1px}';
     html += '.filter-clear-btn{background:#ff3b30;color:white;border:none;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.75rem;cursor:pointer;margin-top:0.5rem;width:100%;font-weight:500}';
     html += '.filter-clear-btn:hover{background:#d63030}';
     // YoY comparison styles
@@ -3549,7 +3549,7 @@ function getHTML() {
     html += 'var monthName = months[parseInt(parts[1])-1];';
     html += 'var nextM = monthlyData[idx + 1];';
     html += 'var nextYear = nextM && nextM.month ? nextM.month.split("-")[0] : null;';
-    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-group"><div class="timeline-year-label">\' + year + \'</div><div class="timeline-year-months">\'; }';
+    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-group"><div class="timeline-year-label">\\x27\' + year.slice(-2) + \'</div><div class="timeline-year-months">\'; }';
     html += 'prevYear = year;';
     html += 'out += \'<div class="timeline-month"><div class="timeline-bar"><span class="bar-month">\' + monthName + \'</span></div>\';';
     html += 'out += \'<div class="timeline-stats"><span class="timeline-dollars">$\' + Math.round(parseFloat(m.total_dollars)/1000).toLocaleString() + \'K</span></div></div>\';';
@@ -4336,7 +4336,7 @@ function getHTML() {
     html += 'var monthName = months[parseInt(parts[1])-1];';
     html += 'var nextKey = sortedMonths[idx + 1];';
     html += 'var nextYear = nextKey ? nextKey.split("-")[0] : null;';
-    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-group"><div class="timeline-year-label">\' + year + \'</div><div class="timeline-year-months">\'; }';
+    html += 'if (prevYear !== year) { out += \'<div class="timeline-year-group"><div class="timeline-year-label">\\x27\' + year.slice(-2) + \'</div><div class="timeline-year-months">\'; }';
     html += 'prevYear = year;';
     html += 'var isActive = state.filters.months.indexOf(monthKey) !== -1;';
     html += 'out += \'<div class="timeline-month\' + (isActive ? " active" : "") + \'" onclick="filterByMonth(\\x27\' + monthKey + \'\\x27)">\';';
