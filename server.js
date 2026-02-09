@@ -33,6 +33,37 @@ const upload = multer({ storage: multer.memoryStorage() });
 var zohoAccessToken = null;
 
 // ============================================
+// ADMIN PANEL INTEGRATION
+// ============================================
+const ADMIN_PANEL_URL = process.env.ADMIN_PANEL_URL;
+const ADMIN_PANEL_API_KEY = process.env.ADMIN_PANEL_API_KEY;
+
+// Helper: Report data freshness to admin panel
+async function reportDataFreshness(dataSource, recordCount, notes) {
+    if (!ADMIN_PANEL_URL || !ADMIN_PANEL_API_KEY) {
+        console.log('Admin panel not configured, skipping freshness report');
+        return;
+    }
+    try {
+        await fetch(`${ADMIN_PANEL_URL}/api/health/freshness`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ADMIN_PANEL_API_KEY
+            },
+            body: JSON.stringify({
+                data_source: dataSource,
+                record_count: recordCount,
+                notes: notes || null
+            })
+        });
+        console.log('Reported freshness to admin panel:', dataSource, recordCount, 'records');
+    } catch (err) {
+        console.error('Failed to report data freshness:', err.message);
+    }
+}
+
+// ============================================
 // ZOHO ANALYTICS CONFIGURATION
 // ============================================
 var ZOHO_ANALYTICS_ORG_ID = process.env.ZOHO_ANALYTICS_ORG_ID || '677679394';
@@ -311,6 +342,9 @@ async function syncFromZohoAnalytics() {
     // Log import
     await pool.query('INSERT INTO import_history (import_type, status, records_imported) VALUES ($1, $2, $3)',
         ['zoho_analytics_sync', 'success', imported]);
+
+    // Report freshness to admin panel
+    await reportDataFreshness('Open Orders', imported, 'Zoho Analytics sync');
 
     console.log('Zoho Analytics sync complete: ' + imported + ' records imported');
     return { success: true, imported: imported, errors: errors };
@@ -644,6 +678,9 @@ async function syncFromWorkDriveFolder(force) {
     // Log import with filename in error_message field (for tracking)
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
         ['workdrive_sync', 'success', imported, fileName]);
+
+    // Report freshness to admin panel
+    await reportDataFreshness('Open Orders', imported, 'WorkDrive sync: ' + fileName);
 
     console.log('WorkDrive sync complete: ' + imported + ' records imported from ' + fileName);
     return { success: true, imported: imported, fileName: fileName, errors: errors };
