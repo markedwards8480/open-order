@@ -5264,6 +5264,11 @@ function getHTML() {
     html += 'var uniquePOs = Object.values(poMap);';
     html += 'var poCount = uniquePOs.length;';
     html += 'document.getElementById("modalOrders").textContent = poCount;';
+    // Check for price variance across POs
+    html += 'var prices = uniquePOs.map(function(po) { return po.po_unit_price; }).filter(function(p) { return p > 0; });';
+    html += 'var minPrice = prices.length > 0 ? Math.min.apply(null, prices) : 0;';
+    html += 'var maxPrice = prices.length > 0 ? Math.max.apply(null, prices) : 0;';
+    html += 'var hasPriceVariance = minPrice > 0 && maxPrice > 0 && (maxPrice - minPrice) > 0.01;';
     // Update the label to say "POs" instead of "Orders"
     html += 'var ordersLabel = document.querySelector("#modalOrders").parentElement.querySelector(".modal-stat-label");';
     html += 'if (ordersLabel) ordersLabel.textContent = "POs";';
@@ -5271,11 +5276,20 @@ function getHTML() {
     html += 'if (listTitle) listTitle.textContent = "Purchase Orders";';
     // Build PO list from deduplicated data
     html += 'var posHtml = "";';
+    // Show price variance warning if different prices exist
+    html += 'if (hasPriceVariance) {';
+    html += 'posHtml += \'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.8rem">\';';
+    html += 'posHtml += \'<span style="color:#856404">⚠️ <strong>Price Variance:</strong> $\' + minPrice.toFixed(2) + \' - $\' + maxPrice.toFixed(2) + \'/unit</span>\';';
+    html += 'posHtml += \'</div>\'; }';
     html += 'if (uniquePOs.length > 0) {';
     html += 'uniquePOs.forEach(function(po) {';
     html += 'var date = po.po_warehouse_date ? new Date(po.po_warehouse_date).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
     html += 'var unitPrice = po.po_unit_price ? "$" + po.po_unit_price.toFixed(2) : "";';
-    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + (unitPrice ? \' <span style="color:#0088c2;font-weight:600">\' + unitPrice + \'/u</span>\' : "") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
+    html += 'var isHighPrice = hasPriceVariance && po.po_unit_price === maxPrice;';
+    html += 'var isLowPrice = hasPriceVariance && po.po_unit_price === minPrice;';
+    html += 'var priceStyle = isHighPrice ? "color:#dc3545;font-weight:700" : (isLowPrice ? "color:#28a745;font-weight:700" : "color:#0088c2;font-weight:600");';
+    html += 'var priceIndicator = isHighPrice ? " ▲" : (isLowPrice ? " ▼" : "");';
+    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + (unitPrice ? \' <span style="\' + priceStyle + \'">\' + unitPrice + \'/u\' + priceIndicator + \'</span>\' : "") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
     html += 'posHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(po.po_quantity || 0) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
     html += '} else { posHtml = \'<div style="color:#86868b;font-size:0.875rem;padding:0.5rem 0">No PO details available</div>\'; }';
     html += 'document.getElementById("modalOrdersList").innerHTML = posHtml;';
