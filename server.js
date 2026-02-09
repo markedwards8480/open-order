@@ -1463,11 +1463,11 @@ app.get('/api/po/filters', async function(req, res) {
 
         var vendorsResult = await pool.query(`
             WITH unique_pos AS (
-                SELECT DISTINCT ON (po_number, style_number, color)
+                SELECT DISTINCT ON (po_number, style_number)
                     po_number, style_number, vendor_name, commodity, po_total
                 FROM order_items
                 WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
-                ORDER BY po_number, style_number, color, id
+                ORDER BY po_number, style_number, id
             )
             SELECT vendor_name, COUNT(DISTINCT po_number) as po_count, SUM(po_total) as total_dollars
             FROM unique_pos
@@ -1477,11 +1477,11 @@ app.get('/api/po/filters', async function(req, res) {
 
         var commoditiesResult = await pool.query(`
             WITH unique_pos AS (
-                SELECT DISTINCT ON (po_number, style_number, color)
+                SELECT DISTINCT ON (po_number, style_number)
                     po_number, style_number, commodity
                 FROM order_items
                 WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
-                ORDER BY po_number, style_number, color, id
+                ORDER BY po_number, style_number, id
             )
             SELECT commodity, COUNT(DISTINCT style_number) as style_count
             FROM unique_pos
@@ -1553,12 +1553,12 @@ app.get('/api/po/orders', async function(req, res) {
         // Unique PO line = po_number + style_number + color
         var deduplicatedCTE = `
             WITH unique_pos AS (
-                SELECT DISTINCT ON (po_number, style_number, color)
+                SELECT DISTINCT ON (po_number, style_number)
                     id, po_number, style_number, style_name, commodity, image_url, color,
                     vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price
                 FROM order_items
                 ${whereClause}
-                ORDER BY po_number, style_number, color, id
+                ORDER BY po_number, style_number, id
             )
         `;
 
