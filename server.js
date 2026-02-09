@@ -3641,6 +3641,7 @@ function getHTML() {
     html += 'else if (state.view === "styles") { renderPOStyles(container, data); }';
     html += 'else if (state.view === "orders") { renderPOByVendor(container, data); }';
     html += 'else if (state.view === "summary") { renderPOSummary(container, data); }';
+    html += 'else if (state.view === "pricecompare") { renderPOPriceCompare(container, data); }';
     html += 'else if (state.view === "charts") { renderPOCharts(container, data); }';
     html += 'else { renderPODashboard(container, data); }';
     html += '} catch(e) { console.error("PO Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
@@ -3992,6 +3993,102 @@ function getHTML() {
     html += 'out += \'<td><div class="summary-cell\' + (val > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(val) + \'</span></div></td>\';';
     html += '});';
     html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(commData[comm].total) + \'</span></div></td></tr>\';';
+    html += '});';
+    html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
+
+    // PO Price Compare view - compare pricing across vendors for same style
+    html += 'function renderPOPriceCompare(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    // State for SKU vs Base Style toggle
+    html += 'var mode = window._priceCompareMode || "sku";';
+    // Build grouped data
+    html += 'var groups = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'if (!item.pos) return;';
+    html += 'item.pos.forEach(function(po) {';
+    html += 'if (!po.po_unit_price && po.po_unit_price !== 0) return;';
+    html += 'var key = mode === "base" ? (item.style_number || "").split("-")[0] : item.style_number;';
+    html += 'if (!key) return;';
+    html += 'if (!groups[key]) groups[key] = { style: key, commodity: item.commodity || "-", entries: [], prices: new Set(), vendors: new Set(), totalQty: 0, totalDollars: 0, image: item.image_url };';
+    html += 'var price = parseFloat(po.po_unit_price) || 0;';
+    html += 'groups[key].entries.push({ vendor: po.vendor_name || "Unknown", po: po.po_number, price: price, qty: po.po_quantity || 0, total: po.po_total || 0, color: po.color || "", warehouse: po.po_warehouse_date });';
+    html += 'groups[key].prices.add(price.toFixed(2));';
+    html += 'groups[key].vendors.add(po.vendor_name || "Unknown");';
+    html += 'groups[key].totalQty += po.po_quantity || 0;';
+    html += 'groups[key].totalDollars += po.po_total || 0;';
+    html += '}); });';
+    // Calculate variance and sort
+    html += 'var groupList = Object.values(groups).map(function(g) {';
+    html += 'var priceArr = g.entries.map(function(e) { return e.price; });';
+    html += 'g.minPrice = Math.min.apply(null, priceArr);';
+    html += 'g.maxPrice = Math.max.apply(null, priceArr);';
+    html += 'g.avgPrice = priceArr.reduce(function(a,b) { return a+b; }, 0) / priceArr.length;';
+    html += 'g.variance = g.maxPrice - g.minPrice;';
+    html += 'g.variancePct = g.minPrice > 0 ? (g.variance / g.minPrice * 100) : 0;';
+    html += 'g.uniquePrices = g.prices.size;';
+    html += 'g.uniqueVendors = g.vendors.size;';
+    // Sort entries by price ascending within group
+    html += 'g.entries.sort(function(a,b) { return a.price - b.price; });';
+    html += 'return g; });';
+    // Sort groups: styles with variance first (desc), then by total dollars
+    html += 'groupList.sort(function(a,b) { if (b.variance !== a.variance) return b.variance - a.variance; return b.totalDollars - a.totalDollars; });';
+    // Count styles with variance
+    html += 'var withVariance = groupList.filter(function(g) { return g.variance > 0; }).length;';
+    // Build HTML
+    html += 'var out = "";';
+    // Header with toggle
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
+    html += 'out += \'<div><h3 style="margin:0;color:#1e3a5f">💰 Price Compare</h3>\';';
+    html += 'out += \'<p style="margin:0.25rem 0 0;color:#86868b;font-size:0.8125rem">\' + withVariance + \' of \' + groupList.length + \' styles have pricing differences</p></div>\';';
+    // SKU / Base Style toggle
+    html += 'out += \'<div style="display:flex;background:#f0f4f8;border-radius:980px;padding:3px">\';';
+    html += 'out += \'<button onclick="window._priceCompareMode=\\x27sku\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "sku" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">SKU Level</button>\';';
+    html += 'out += \'<button onclick="window._priceCompareMode=\\x27base\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "base" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">Base Style</button>\';';
+    html += 'out += \'</div></div>\';';
+    // Table
+    html += 'out += \'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.8125rem">\';';
+    html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left">\';';
+    html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">Style</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Commodity</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:center">Vendors</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Low Price</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">High Price</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Variance</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Total Qty</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f;text-align:right">Total Value</th>\';';
+    html += 'out += \'</tr></thead><tbody>\';';
+    // Render each group
+    html += 'groupList.forEach(function(g, idx) {';
+    // Color code: red for high variance, orange for moderate, none for zero
+    html += 'var borderColor = g.variance === 0 ? "transparent" : g.variancePct > 20 ? "#ff3b30" : g.variancePct > 10 ? "#ff9500" : "#ffcc00";';
+    html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#fafbfc";';
+    // Group header row
+    html += 'out += \'<tr style="background:\' + bgColor + \';border-left:4px solid \' + borderColor + \';cursor:pointer" onclick="var el=this.nextSibling;while(el&&el.classList&&el.classList.contains(\\x27price-detail\\x27)){el.style.display=el.style.display===\\x27none\\x27?\\x27table-row\\x27:\\x27none\\x27;el=el.nextSibling;}">\';';
+    html += 'out += \'<td style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">\' + g.style + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73">\' + g.commodity + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:center">\' + g.uniqueVendors + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:#34c759;font-weight:600">$\' + g.minPrice.toFixed(2) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:\' + (g.variance > 0 ? "#ff3b30" : "#34c759") + \';font-weight:600">$\' + g.maxPrice.toFixed(2) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;font-weight:700;color:\' + (g.variance === 0 ? "#86868b" : "#ff9500") + \'">\' + (g.variance === 0 ? "-" : "$" + g.variance.toFixed(2) + " (" + g.variancePct.toFixed(0) + "%)") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right">\' + formatNumber(g.totalQty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 1rem;text-align:right;font-weight:600">$\' + formatNumber(Math.round(g.totalDollars)) + \'</td>\';';
+    html += 'out += \'</tr>\';';
+    // Detail rows (collapsed by default, shown on click)
+    html += 'g.entries.forEach(function(e) {';
+    html += 'var isLowest = e.price === g.minPrice;';
+    html += 'var isHighest = e.price === g.maxPrice && g.variance > 0;';
+    html += 'out += \'<tr class="price-detail" style="display:none;background:#f8fafc;border-left:4px solid \' + borderColor + \'">\';';
+    html += 'out += \'<td style="padding:0.4rem 1rem 0.4rem 2rem;color:#86868b;font-size:0.75rem">PO# \' + e.po + (e.color ? " · " + e.color : "") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#86868b"></td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#6e6e73">\' + e.vendor + \'</td>\';';
+    html += 'out += \'<td colspan="2" style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;font-weight:600;color:\' + (isLowest && g.variance > 0 ? "#34c759" : isHighest ? "#ff3b30" : "#1e3a5f") + \'">$\' + e.price.toFixed(2) + \'/u</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;color:#86868b">\' + (isLowest && g.variance > 0 ? "✓ Best" : isHighest ? "▲ High" : "") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem">\' + formatNumber(e.qty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 1rem;text-align:right;font-size:0.75rem">$\' + formatNumber(Math.round(e.total)) + \'</td>\';';
+    html += 'out += \'</tr>\';';
+    html += '});';
     html += '});';
     html += 'out += \'</tbody></table></div>\';';
     html += 'container.innerHTML = out; }';
@@ -5684,7 +5781,7 @@ function getHTML() {
     html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "none");';
     html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "none");';
     // Update view toggle for PO mode
-    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button><button class="view-btn" data-view="charts">📈 Charts</button>\';';
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button><button class="view-btn" data-view="pricecompare">💰 Price Compare</button><button class="view-btn" data-view="charts">📈 Charts</button>\';';
     html += 'bindViewToggle();';
     html += '} else {';
     html += 'document.getElementById("dashboardTitle").textContent = "Open Orders";';
