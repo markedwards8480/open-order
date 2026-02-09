@@ -1462,17 +1462,29 @@ app.get('/api/po/filters', async function(req, res) {
         var statusParams = statusFilter === 'All' ? [] : [statusFilter];
 
         var vendorsResult = await pool.query(`
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number, color)
+                    po_number, style_number, vendor_name, commodity, po_total
+                FROM order_items
+                WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
+                ORDER BY po_number, style_number, color, id
+            )
             SELECT vendor_name, COUNT(DISTINCT po_number) as po_count, SUM(po_total) as total_dollars
-            FROM order_items
-            WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
+            FROM unique_pos
             GROUP BY vendor_name
             ORDER BY vendor_name
         `, statusParams);
 
         var commoditiesResult = await pool.query(`
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number, color)
+                    po_number, style_number, commodity
+                FROM order_items
+                WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
+                ORDER BY po_number, style_number, color, id
+            )
             SELECT commodity, COUNT(DISTINCT style_number) as style_count
-            FROM order_items
-            WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
+            FROM unique_pos
             GROUP BY commodity
             ORDER BY commodity
         `, statusParams);
@@ -1487,6 +1499,7 @@ app.get('/api/po/filters', async function(req, res) {
 });
 
 // Get PO data (grouped by style, like sales orders)
+// Uses DISTINCT ON to deduplicate PO lines that appear on multiple sales orders
 app.get('/api/po/orders', async function(req, res) {
     try {
         var conditions = ['po_number IS NOT NULL', "po_number != ''"];
@@ -1536,8 +1549,22 @@ app.get('/api/po/orders', async function(req, res) {
 
         var whereClause = 'WHERE ' + conditions.join(' AND ');
 
+        // CTE to deduplicate PO lines - same PO can appear on multiple sales orders
+        // Unique PO line = po_number + style_number + color
+        var deduplicatedCTE = `
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number, color)
+                    id, po_number, style_number, style_name, commodity, image_url, color,
+                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price
+                FROM order_items
+                ${whereClause}
+                ORDER BY po_number, style_number, color, id
+            )
+        `;
+
         // Get items grouped by style with PO details as JSON array
         var query = `
+            ${deduplicatedCTE}
             SELECT
                 style_number,
                 style_name,
@@ -1558,60 +1585,59 @@ app.get('/api/po/orders', async function(req, res) {
                 SUM(po_quantity) as total_qty,
                 SUM(po_total) as total_dollars,
                 COUNT(DISTINCT po_number) as po_count
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY style_number, style_name, commodity, image_url
             ORDER BY SUM(po_total) DESC
             LIMIT 500
         `;
         var itemsResult = await pool.query(query, params);
 
-        // Get stats
+        // Get stats (deduplicated)
         var statsResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT
                 COUNT(DISTINCT po_number) as po_count,
                 COUNT(DISTINCT vendor_name) as vendor_count,
                 COUNT(DISTINCT style_number) as style_count,
                 COALESCE(SUM(po_quantity), 0) as total_qty,
                 COALESCE(SUM(po_total), 0) as total_dollars
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
         `, params);
 
-        // Get vendor breakdown
+        // Get vendor breakdown (deduplicated)
         var vendorResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT vendor_name, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY vendor_name
             ORDER BY SUM(po_total) DESC
         `, params);
 
-        // Get commodity breakdown
+        // Get commodity breakdown (deduplicated)
         var commodityResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT commodity, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY commodity
             ORDER BY SUM(po_total) DESC
         `, params);
 
-        // Get monthly breakdown (by warehouse date)
+        // Get monthly breakdown by warehouse date (deduplicated)
         var monthlyResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT TO_CHAR(po_warehouse_date, 'YYYY-MM') as month, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
-            AND po_warehouse_date IS NOT NULL
+            FROM unique_pos
+            WHERE po_warehouse_date IS NOT NULL
             GROUP BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
             ORDER BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
         `, params);
 
-        // Get color breakdown
+        // Get color breakdown (deduplicated)
         var colorResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT color, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty, COUNT(DISTINCT style_number) as style_count
-            FROM order_items
-            ${whereClause}
-            AND color IS NOT NULL AND color != ''
+            FROM unique_pos
+            WHERE color IS NOT NULL AND color != ''
             GROUP BY color
             ORDER BY SUM(po_total) DESC
             LIMIT 30
