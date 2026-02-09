@@ -33,6 +33,37 @@ const upload = multer({ storage: multer.memoryStorage() });
 var zohoAccessToken = null;
 
 // ============================================
+// ADMIN PANEL INTEGRATION
+// ============================================
+const ADMIN_PANEL_URL = process.env.ADMIN_PANEL_URL;
+const ADMIN_PANEL_API_KEY = process.env.ADMIN_PANEL_API_KEY;
+
+// Helper: Report data freshness to admin panel
+async function reportDataFreshness(dataSource, recordCount, notes) {
+    if (!ADMIN_PANEL_URL || !ADMIN_PANEL_API_KEY) {
+        console.log('Admin panel not configured, skipping freshness report');
+        return;
+    }
+    try {
+        await fetch(`${ADMIN_PANEL_URL}/api/health/freshness`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ADMIN_PANEL_API_KEY
+            },
+            body: JSON.stringify({
+                data_source: dataSource,
+                record_count: recordCount,
+                notes: notes || null
+            })
+        });
+        console.log('Reported freshness to admin panel:', dataSource, recordCount, 'records');
+    } catch (err) {
+        console.error('Failed to report data freshness:', err.message);
+    }
+}
+
+// ============================================
 // ZOHO ANALYTICS CONFIGURATION
 // ============================================
 var ZOHO_ANALYTICS_ORG_ID = process.env.ZOHO_ANALYTICS_ORG_ID || '677679394';
@@ -311,6 +342,9 @@ async function syncFromZohoAnalytics() {
     // Log import
     await pool.query('INSERT INTO import_history (import_type, status, records_imported) VALUES ($1, $2, $3)',
         ['zoho_analytics_sync', 'success', imported]);
+
+    // Report freshness to admin panel
+    await reportDataFreshness('Open Orders', imported, 'Zoho Analytics sync');
 
     console.log('Zoho Analytics sync complete: ' + imported + ' records imported');
     return { success: true, imported: imported, errors: errors };
@@ -644,6 +678,9 @@ async function syncFromWorkDriveFolder(force) {
     // Log import with filename in error_message field (for tracking)
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
         ['workdrive_sync', 'success', imported, fileName]);
+
+    // Report freshness to admin panel
+    await reportDataFreshness('Open Orders', imported, 'WorkDrive sync: ' + fileName);
 
     console.log('WorkDrive sync complete: ' + imported + ' records imported from ' + fileName);
     return { success: true, imported: imported, fileName: fileName, errors: errors };
@@ -1425,17 +1462,29 @@ app.get('/api/po/filters', async function(req, res) {
         var statusParams = statusFilter === 'All' ? [] : [statusFilter];
 
         var vendorsResult = await pool.query(`
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number)
+                    po_number, style_number, vendor_name, commodity, po_total
+                FROM order_items
+                WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
+                ORDER BY po_number, style_number, id
+            )
             SELECT vendor_name, COUNT(DISTINCT po_number) as po_count, SUM(po_total) as total_dollars
-            FROM order_items
-            WHERE vendor_name IS NOT NULL AND vendor_name != '' AND po_number IS NOT NULL AND po_number != '' AND ${statusCondition}
+            FROM unique_pos
             GROUP BY vendor_name
             ORDER BY vendor_name
         `, statusParams);
 
         var commoditiesResult = await pool.query(`
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number)
+                    po_number, style_number, commodity
+                FROM order_items
+                WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
+                ORDER BY po_number, style_number, id
+            )
             SELECT commodity, COUNT(DISTINCT style_number) as style_count
-            FROM order_items
-            WHERE ${statusCondition} AND commodity IS NOT NULL AND commodity != '' AND po_number IS NOT NULL AND po_number != ''
+            FROM unique_pos
             GROUP BY commodity
             ORDER BY commodity
         `, statusParams);
@@ -1450,6 +1499,7 @@ app.get('/api/po/filters', async function(req, res) {
 });
 
 // Get PO data (grouped by style, like sales orders)
+// Uses DISTINCT ON to deduplicate PO lines that appear on multiple sales orders
 app.get('/api/po/orders', async function(req, res) {
     try {
         var conditions = ['po_number IS NOT NULL', "po_number != ''"];
@@ -1499,8 +1549,22 @@ app.get('/api/po/orders', async function(req, res) {
 
         var whereClause = 'WHERE ' + conditions.join(' AND ');
 
+        // CTE to deduplicate PO lines - same PO can appear on multiple sales orders
+        // Unique PO line = po_number + style_number + color
+        var deduplicatedCTE = `
+            WITH unique_pos AS (
+                SELECT DISTINCT ON (po_number, style_number)
+                    id, po_number, style_number, style_name, commodity, image_url, color,
+                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price
+                FROM order_items
+                ${whereClause}
+                ORDER BY po_number, style_number, id
+            )
+        `;
+
         // Get items grouped by style with PO details as JSON array
         var query = `
+            ${deduplicatedCTE}
             SELECT
                 style_number,
                 style_name,
@@ -1521,60 +1585,59 @@ app.get('/api/po/orders', async function(req, res) {
                 SUM(po_quantity) as total_qty,
                 SUM(po_total) as total_dollars,
                 COUNT(DISTINCT po_number) as po_count
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY style_number, style_name, commodity, image_url
             ORDER BY SUM(po_total) DESC
             LIMIT 500
         `;
         var itemsResult = await pool.query(query, params);
 
-        // Get stats
+        // Get stats (deduplicated)
         var statsResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT
                 COUNT(DISTINCT po_number) as po_count,
                 COUNT(DISTINCT vendor_name) as vendor_count,
                 COUNT(DISTINCT style_number) as style_count,
                 COALESCE(SUM(po_quantity), 0) as total_qty,
                 COALESCE(SUM(po_total), 0) as total_dollars
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
         `, params);
 
-        // Get vendor breakdown
+        // Get vendor breakdown (deduplicated)
         var vendorResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT vendor_name, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY vendor_name
             ORDER BY SUM(po_total) DESC
         `, params);
 
-        // Get commodity breakdown
+        // Get commodity breakdown (deduplicated)
         var commodityResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT commodity, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
+            FROM unique_pos
             GROUP BY commodity
             ORDER BY SUM(po_total) DESC
         `, params);
 
-        // Get monthly breakdown (by warehouse date)
+        // Get monthly breakdown by warehouse date (deduplicated)
         var monthlyResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT TO_CHAR(po_warehouse_date, 'YYYY-MM') as month, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty
-            FROM order_items
-            ${whereClause}
-            AND po_warehouse_date IS NOT NULL
+            FROM unique_pos
+            WHERE po_warehouse_date IS NOT NULL
             GROUP BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
             ORDER BY TO_CHAR(po_warehouse_date, 'YYYY-MM')
         `, params);
 
-        // Get color breakdown
+        // Get color breakdown (deduplicated)
         var colorResult = await pool.query(`
+            ${deduplicatedCTE}
             SELECT color, SUM(po_total) as total_dollars, SUM(po_quantity) as total_qty, COUNT(DISTINCT style_number) as style_count
-            FROM order_items
-            ${whereClause}
-            AND color IS NOT NULL AND color != ''
+            FROM unique_pos
+            WHERE color IS NOT NULL AND color != ''
             GROUP BY color
             ORDER BY SUM(po_total) DESC
             LIMIT 30
@@ -3578,6 +3641,7 @@ function getHTML() {
     html += 'else if (state.view === "styles") { renderPOStyles(container, data); }';
     html += 'else if (state.view === "orders") { renderPOByVendor(container, data); }';
     html += 'else if (state.view === "summary") { renderPOSummary(container, data); }';
+    html += 'else if (state.view === "pricecompare") { renderPOPriceCompare(container, data); }';
     html += 'else if (state.view === "charts") { renderPOCharts(container, data); }';
     html += 'else { renderPODashboard(container, data); }';
     html += '} catch(e) { console.error("PO Render error:", e); container.innerHTML = \'<div class="empty-state"><h3>Render Error</h3><p>\' + e.message + \'</p></div>\'; }}';
@@ -3929,6 +3993,102 @@ function getHTML() {
     html += 'out += \'<td><div class="summary-cell\' + (val > 0 ? " has-value" : "") + \'"><span class="dollars">\' + formatMoney(val) + \'</span></div></td>\';';
     html += '});';
     html += 'out += \'<td class="row-total"><div class="summary-cell has-value"><span class="dollars">\' + formatMoney(commData[comm].total) + \'</span></div></td></tr>\';';
+    html += '});';
+    html += 'out += \'</tbody></table></div>\';';
+    html += 'container.innerHTML = out; }';
+
+    // PO Price Compare view - compare pricing across vendors for same style
+    html += 'function renderPOPriceCompare(container, data) {';
+    html += 'var items = data.items || [];';
+    html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
+    // State for SKU vs Base Style toggle
+    html += 'var mode = window._priceCompareMode || "sku";';
+    // Build grouped data
+    html += 'var groups = {};';
+    html += 'items.forEach(function(item) {';
+    html += 'if (!item.pos) return;';
+    html += 'item.pos.forEach(function(po) {';
+    html += 'if (!po.po_unit_price && po.po_unit_price !== 0) return;';
+    html += 'var key = mode === "base" ? (item.style_number || "").split("-")[0] : item.style_number;';
+    html += 'if (!key) return;';
+    html += 'if (!groups[key]) groups[key] = { style: key, commodity: item.commodity || "-", entries: [], prices: new Set(), vendors: new Set(), totalQty: 0, totalDollars: 0, image: item.image_url };';
+    html += 'var price = parseFloat(po.po_unit_price) || 0;';
+    html += 'groups[key].entries.push({ vendor: po.vendor_name || "Unknown", po: po.po_number, price: price, qty: po.po_quantity || 0, total: po.po_total || 0, color: po.color || "", warehouse: po.po_warehouse_date });';
+    html += 'groups[key].prices.add(price.toFixed(2));';
+    html += 'groups[key].vendors.add(po.vendor_name || "Unknown");';
+    html += 'groups[key].totalQty += po.po_quantity || 0;';
+    html += 'groups[key].totalDollars += po.po_total || 0;';
+    html += '}); });';
+    // Calculate variance and sort
+    html += 'var groupList = Object.values(groups).map(function(g) {';
+    html += 'var priceArr = g.entries.map(function(e) { return e.price; });';
+    html += 'g.minPrice = Math.min.apply(null, priceArr);';
+    html += 'g.maxPrice = Math.max.apply(null, priceArr);';
+    html += 'g.avgPrice = priceArr.reduce(function(a,b) { return a+b; }, 0) / priceArr.length;';
+    html += 'g.variance = g.maxPrice - g.minPrice;';
+    html += 'g.variancePct = g.minPrice > 0 ? (g.variance / g.minPrice * 100) : 0;';
+    html += 'g.uniquePrices = g.prices.size;';
+    html += 'g.uniqueVendors = g.vendors.size;';
+    // Sort entries by price ascending within group
+    html += 'g.entries.sort(function(a,b) { return a.price - b.price; });';
+    html += 'return g; });';
+    // Sort groups: styles with variance first (desc), then by total dollars
+    html += 'groupList.sort(function(a,b) { if (b.variance !== a.variance) return b.variance - a.variance; return b.totalDollars - a.totalDollars; });';
+    // Count styles with variance
+    html += 'var withVariance = groupList.filter(function(g) { return g.variance > 0; }).length;';
+    // Build HTML
+    html += 'var out = "";';
+    // Header with toggle
+    html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
+    html += 'out += \'<div><h3 style="margin:0;color:#1e3a5f">💰 Price Compare</h3>\';';
+    html += 'out += \'<p style="margin:0.25rem 0 0;color:#86868b;font-size:0.8125rem">\' + withVariance + \' of \' + groupList.length + \' styles have pricing differences</p></div>\';';
+    // SKU / Base Style toggle
+    html += 'out += \'<div style="display:flex;background:#f0f4f8;border-radius:980px;padding:3px">\';';
+    html += 'out += \'<button onclick="window._priceCompareMode=\\x27sku\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "sku" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">SKU Level</button>\';';
+    html += 'out += \'<button onclick="window._priceCompareMode=\\x27base\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "base" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">Base Style</button>\';';
+    html += 'out += \'</div></div>\';';
+    // Table
+    html += 'out += \'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.8125rem">\';';
+    html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left">\';';
+    html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">Style</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Commodity</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:center">Vendors</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Low Price</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">High Price</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Variance</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Total Qty</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f;text-align:right">Total Value</th>\';';
+    html += 'out += \'</tr></thead><tbody>\';';
+    // Render each group
+    html += 'groupList.forEach(function(g, idx) {';
+    // Color code: red for high variance, orange for moderate, none for zero
+    html += 'var borderColor = g.variance === 0 ? "transparent" : g.variancePct > 20 ? "#ff3b30" : g.variancePct > 10 ? "#ff9500" : "#ffcc00";';
+    html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#fafbfc";';
+    // Group header row
+    html += 'out += \'<tr style="background:\' + bgColor + \';border-left:4px solid \' + borderColor + \';cursor:pointer" onclick="var el=this.nextSibling;while(el&&el.classList&&el.classList.contains(\\x27price-detail\\x27)){el.style.display=el.style.display===\\x27none\\x27?\\x27table-row\\x27:\\x27none\\x27;el=el.nextSibling;}">\';';
+    html += 'out += \'<td style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">\' + g.style + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73">\' + g.commodity + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:center">\' + g.uniqueVendors + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:#34c759;font-weight:600">$\' + g.minPrice.toFixed(2) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:\' + (g.variance > 0 ? "#ff3b30" : "#34c759") + \';font-weight:600">$\' + g.maxPrice.toFixed(2) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;font-weight:700;color:\' + (g.variance === 0 ? "#86868b" : "#ff9500") + \'">\' + (g.variance === 0 ? "-" : "$" + g.variance.toFixed(2) + " (" + g.variancePct.toFixed(0) + "%)") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right">\' + formatNumber(g.totalQty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 1rem;text-align:right;font-weight:600">$\' + formatNumber(Math.round(g.totalDollars)) + \'</td>\';';
+    html += 'out += \'</tr>\';';
+    // Detail rows (collapsed by default, shown on click)
+    html += 'g.entries.forEach(function(e) {';
+    html += 'var isLowest = e.price === g.minPrice;';
+    html += 'var isHighest = e.price === g.maxPrice && g.variance > 0;';
+    html += 'out += \'<tr class="price-detail" style="display:none;background:#f8fafc;border-left:4px solid \' + borderColor + \'">\';';
+    html += 'out += \'<td style="padding:0.4rem 1rem 0.4rem 2rem;color:#86868b;font-size:0.75rem">PO# \' + e.po + (e.color ? " · " + e.color : "") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#86868b"></td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#6e6e73">\' + e.vendor + \'</td>\';';
+    html += 'out += \'<td colspan="2" style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;font-weight:600;color:\' + (isLowest && g.variance > 0 ? "#34c759" : isHighest ? "#ff3b30" : "#1e3a5f") + \'">$\' + e.price.toFixed(2) + \'/u</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;color:#86868b">\' + (isLowest && g.variance > 0 ? "✓ Best" : isHighest ? "▲ High" : "") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem">\' + formatNumber(e.qty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.4rem 1rem;text-align:right;font-size:0.75rem">$\' + formatNumber(Math.round(e.total)) + \'</td>\';';
+    html += 'out += \'</tr>\';';
+    html += '});';
     html += '});';
     html += 'out += \'</tbody></table></div>\';';
     html += 'container.innerHTML = out; }';
@@ -5635,7 +5795,7 @@ function getHTML() {
     html += 'document.getElementById("fyMultiSelect") && (document.getElementById("fyMultiSelect").closest(".filter-group").style.display = "none");';
     html += 'document.getElementById("monthMultiSelect") && (document.getElementById("monthMultiSelect").closest(".filter-group").style.display = "none");';
     // Update view toggle for PO mode
-    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button><button class="view-btn" data-view="charts">📈 Charts</button>\';';
+    html += 'document.querySelector(".view-toggle").innerHTML = \'<button class="view-btn active" data-view="dashboard">📊 Dashboard</button><button class="view-btn" data-view="styles">By Style</button><button class="view-btn" data-view="summary">Summary</button><button class="view-btn" data-view="orders">By Vendor</button><button class="view-btn" data-view="pricecompare">💰 Price Compare</button><button class="view-btn" data-view="charts">📈 Charts</button>\';';
     html += 'bindViewToggle();';
     html += '} else {';
     html += 'document.getElementById("dashboardTitle").textContent = "Open Orders";';
