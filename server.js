@@ -3283,6 +3283,7 @@ app.post('/api/trigger-export', async function(req, res) {
 });
 
 // Callback endpoint - Felix's Zoho Flow calls this when export is done
+// SMART MATCHING: If jobId doesn't match, finds most recent "processing" job
 app.post('/api/zoho-export-callback', async function(req, res) {
     console.log('=== ZOHO EXPORT CALLBACK RECEIVED ===');
     console.log('Body:', JSON.stringify(req.body, null, 2));
@@ -3290,22 +3291,41 @@ app.post('/api/zoho-export-callback', async function(req, res) {
     try {
         var { jobId, status, message, error } = req.body;
 
-        if (!jobId) {
-            return res.status(400).json({ success: false, error: 'Missing jobId' });
+        // Determine final status - accept 'completed', 'success', or default to 'completed'
+        var finalStatus = (status === 'completed' || status === 'success') ? 'completed' :
+                          (status === 'failed' || status === 'error') ? 'failed' : 'completed';
+        var updated = false;
+        var matchedJobId = jobId;
+
+        // First try exact jobId match (if provided)
+        if (jobId) {
+            var result = await pool.query(
+                'UPDATE export_jobs SET status = $1, completed_at = NOW(), error_message = $2 WHERE job_id = $3',
+                [finalStatus, error || message || null, jobId]
+            );
+            updated = result.rowCount > 0;
+            if (updated) {
+                console.log('Exact jobId match - updated:', jobId, '->', finalStatus);
+            }
         }
 
-        // Update the job status
-        var newStatus = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status || 'completed';
-
-        await pool.query(
-            'UPDATE export_jobs SET status = $1, completed_at = NOW(), error_message = $2 WHERE job_id = $3',
-            [newStatus, error || message || null, jobId]
-        );
-
-        console.log('Export job updated:', jobId, '->', newStatus);
+        // If no match (or no jobId provided), find the most recent "processing" job and update THAT
+        if (!updated) {
+            var fallbackResult = await pool.query(
+                "UPDATE export_jobs SET status = $1, completed_at = NOW(), error_message = $2 WHERE id = (SELECT id FROM export_jobs WHERE status = 'processing' ORDER BY triggered_at DESC LIMIT 1) RETURNING job_id",
+                [finalStatus, error || message || 'Callback received (smart match)']
+            );
+            if (fallbackResult.rows.length > 0) {
+                matchedJobId = fallbackResult.rows[0].job_id;
+                updated = true;
+                console.log('Smart match - found processing job and updated:', matchedJobId, '->', finalStatus);
+            } else {
+                console.log('No processing jobs found to update');
+            }
+        }
 
         // If completed successfully, trigger WorkDrive sync to import the new files
-        if (newStatus === 'completed') {
+        if (updated && finalStatus === 'completed') {
             console.log('Export completed, triggering WorkDrive sync...');
             // Auto-sync Import POs from WorkDrive after export completes
             setTimeout(async function() {
@@ -3318,7 +3338,13 @@ app.post('/api/zoho-export-callback', async function(req, res) {
             }, 5000); // Wait 5 seconds for files to be fully written
         }
 
-        res.json({ success: true, message: 'Callback received', jobId: jobId, status: newStatus });
+        res.json({
+            success: true,
+            message: updated ? 'Callback received and job updated' : 'Callback received but no matching job found',
+            jobId: matchedJobId,
+            status: finalStatus,
+            matched: updated
+        });
 
     } catch (err) {
         console.error('Callback error:', err);
