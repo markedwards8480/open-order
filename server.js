@@ -356,6 +356,7 @@ async function syncFromZohoAnalytics() {
 
 // WorkDrive folder configuration - Catalog Files/Open Sales Query
 var WORKDRIVE_SYNC_FOLDER_ID = process.env.WORKDRIVE_SYNC_FOLDER_ID || '';
+var WORKDRIVE_IMPORT_PO_FOLDER_ID = process.env.WORKDRIVE_IMPORT_PO_FOLDER_ID || '';
 var WORKDRIVE_TEAM_ID = process.env.WORKDRIVE_TEAM_ID || '';
 
 // List files in a WorkDrive folder - tries multiple API endpoints
@@ -684,6 +685,210 @@ async function syncFromWorkDriveFolder(force) {
 
     console.log('WorkDrive sync complete: ' + imported + ' records imported from ' + fileName);
     return { success: true, imported: imported, fileName: fileName, errors: errors };
+}
+
+// ============================================
+// IMPORT PO SYNC FROM WORKDRIVE
+// ============================================
+// Separate sync function for Import PO data (different CSV file/folder)
+async function syncImportPOsFromWorkDrive(force) {
+    console.log('Starting Import PO sync from WorkDrive... (force=' + !!force + ')');
+
+    if (!WORKDRIVE_IMPORT_PO_FOLDER_ID) {
+        return { success: false, error: 'Import PO folder ID not configured. Set WORKDRIVE_IMPORT_PO_FOLDER_ID in environment.' };
+    }
+
+    // List files in folder
+    var listResult = await listWorkDriveFolder(WORKDRIVE_IMPORT_PO_FOLDER_ID);
+    if (!listResult.success) {
+        return listResult;
+    }
+
+    // Find latest CSV
+    var latestFile = findLatestCSV(listResult.files);
+    if (!latestFile) {
+        return { success: false, error: 'No CSV files found in Import PO folder' };
+    }
+
+    var fileName = latestFile.attributes.name;
+    var fileId = latestFile.id;
+    var modifiedTime = latestFile.attributes.modified_time;
+
+    console.log('Found Import PO file: ' + fileName + ' (modified: ' + modifiedTime + ')');
+
+    // Check if already imported (unless forced)
+    if (!force) {
+        var lastImport = await pool.query(
+            "SELECT * FROM import_history WHERE import_type = 'import_po_sync' AND error_message = $1 ORDER BY created_at DESC LIMIT 1",
+            [fileName]
+        );
+        if (lastImport.rows.length > 0) {
+            var lastImportTime = new Date(lastImport.rows[0].created_at);
+            var fileModTime = new Date(modifiedTime);
+            var lastRecords = lastImport.rows[0].records_imported || 0;
+            if (fileModTime <= lastImportTime && lastRecords > 0) {
+                return { success: true, message: 'Import PO file already imported: ' + fileName, skipped: true };
+            }
+        }
+    }
+
+    // Download the file
+    console.log('Downloading Import PO file: ' + fileName);
+    var downloadResult = await downloadWorkDriveFile(fileId);
+    if (!downloadResult.success) {
+        return downloadResult;
+    }
+
+    // Parse CSV - Import PO specific columns
+    var rows = downloadResult.data.split('\n');
+    if (rows.length < 2) {
+        return { success: false, error: 'CSV file is empty or has no data rows' };
+    }
+
+    var headers = rows[0].split(',').map(function(h) { return h.trim().toLowerCase().replace(/['"]/g, ''); });
+    console.log('Import PO CSV headers:', headers);
+
+    // Map column names (flexible naming)
+    var findCol = function(names) {
+        for (var i = 0; i < names.length; i++) {
+            var idx = headers.indexOf(names[i].toLowerCase());
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    };
+
+    var mapping = {
+        po_number: findCol(['purchase_order_number', 'po_number', 'po', 'po#']),
+        vendor_name: findCol(['vendor_name', 'vendor', 'supplier', 'factory']),
+        style_number: findCol(['style_number', 'style', 'sku', 'item_number', 'item']),
+        style_name: findCol(['style_name', 'description', 'item_name', 'product_name']),
+        commodity: findCol(['commodity', 'category', 'product_type', 'type']),
+        color: findCol(['color', 'colour', 'variant']),
+        po_quantity: findCol(['po_quantity', 'quantity', 'qty', 'order_qty']),
+        po_unit_price: findCol(['po_price_fcy', 'po_unit_price', 'unit_price', 'price', 'rate', 'cost']),
+        po_total: findCol(['po_total_fcy', 'po_total', 'total', 'amount', 'total_amount']),
+        po_warehouse_date: findCol(['po_warehouse_date', 'warehouse_date', 'eta', 'delivery_date', 'expected_date']),
+        po_status: findCol(['po_status', 'status', 'order_status']),
+        image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
+        customer: findCol(['customer', 'customer_name', 'client'])
+    };
+
+    console.log('Import PO column mapping:', mapping);
+
+    // Process rows
+    var imported = 0;
+    var updated = 0;
+    var errors = [];
+
+    for (var i = 1; i < rows.length; i++) {
+        if (!rows[i].trim()) continue;
+
+        try {
+            // Parse CSV row (handle quoted values)
+            var values = [];
+            var inQuotes = false;
+            var current = '';
+            for (var j = 0; j < rows[i].length; j++) {
+                var char = rows[i][j];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+
+            var getValue = function(idx) {
+                if (idx < 0 || idx >= values.length) return '';
+                return values[idx].replace(/^["']|["']$/g, '').trim();
+            };
+
+            var getNumber = function(idx) {
+                var val = getValue(idx);
+                if (!val) return 0;
+                var num = parseFloat(val.replace(/[,$]/g, ''));
+                return isNaN(num) ? 0 : num;
+            };
+
+            // Extract PO data
+            var poNumber = getValue(mapping.po_number);
+            var vendorName = getValue(mapping.vendor_name);
+            var styleNumber = getValue(mapping.style_number);
+            var styleName = getValue(mapping.style_name);
+            var commodity = getValue(mapping.commodity);
+            var color = getValue(mapping.color);
+            var poQuantity = getNumber(mapping.po_quantity);
+            var poUnitPrice = getNumber(mapping.po_unit_price);
+            var poTotal = getNumber(mapping.po_total);
+            var poWarehouseDate = getValue(mapping.po_warehouse_date);
+            var poStatus = getValue(mapping.po_status) || 'Open';
+            var imageUrl = getValue(mapping.image_url);
+            var customer = getValue(mapping.customer);
+
+            // Skip rows without required data
+            if (!poNumber || !styleNumber) {
+                continue;
+            }
+
+            // Calculate total if not provided
+            if (!poTotal && poQuantity && poUnitPrice) {
+                poTotal = poQuantity * poUnitPrice;
+            }
+
+            // Parse date
+            var parsedDate = null;
+            if (poWarehouseDate) {
+                var d = new Date(poWarehouseDate);
+                if (!isNaN(d.getTime())) {
+                    parsedDate = d.toISOString().split('T')[0];
+                }
+            }
+
+            // Upsert: check if PO+style+color exists
+            var existingRow = await pool.query(
+                'SELECT id FROM order_items WHERE po_number = $1 AND style_number = $2 AND (color = $3 OR (color IS NULL AND $3 IS NULL))',
+                [poNumber, styleNumber, color || null]
+            );
+
+            if (existingRow.rows.length > 0) {
+                // Update existing
+                await pool.query(`
+                    UPDATE order_items SET
+                        vendor_name = COALESCE(NULLIF($1, ''), vendor_name),
+                        style_name = COALESCE(NULLIF($2, ''), style_name),
+                        commodity = COALESCE(NULLIF($3, ''), commodity),
+                        po_quantity = $4,
+                        po_unit_price = $5,
+                        po_total = $6,
+                        po_warehouse_date = COALESCE($7, po_warehouse_date),
+                        po_status = COALESCE(NULLIF($8, ''), po_status),
+                        image_url = COALESCE(NULLIF($9, ''), image_url),
+                        customer = COALESCE(NULLIF($10, ''), customer)
+                    WHERE po_number = $11 AND style_number = $12 AND (color = $13 OR (color IS NULL AND $13 IS NULL))
+                `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
+                updated++;
+            } else {
+                // Insert new
+                await pool.query(`
+                    INSERT INTO order_items (po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'Open')
+                `, [poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer]);
+                imported++;
+            }
+        } catch (rowErr) {
+            errors.push({ row: i, error: rowErr.message });
+        }
+    }
+
+    // Log import
+    await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
+        ['import_po_sync', 'success', imported + updated, fileName]);
+
+    console.log('Import PO sync complete: ' + imported + ' inserted, ' + updated + ' updated from ' + fileName);
+    return { success: true, imported: imported, updated: updated, total: imported + updated, fileName: fileName, errors: errors };
 }
 
 // ============================================
@@ -1911,6 +2116,68 @@ app.get('/api/workdrive/status', async function(req, res) {
         res.json({
             configured: isConfigured,
             folderId: WORKDRIVE_SYNC_FOLDER_ID || null,
+            lastSync: lastSync.rows.length > 0 ? lastSync.rows[0].created_at : null,
+            lastSyncRecords: lastSync.rows.length > 0 ? lastSync.rows[0].records_imported : null,
+            lastSyncFile: lastSync.rows.length > 0 ? lastSync.rows[0].error_message : null,
+            latestAvailableFile: latestFileName,
+            recentFiles: folderFiles
+        });
+    } catch (err) {
+        res.json({ error: err.message });
+    }
+});
+
+// ============================================
+// IMPORT PO SYNC ENDPOINTS
+// ============================================
+
+// Sync Import POs from WorkDrive folder
+app.post('/api/workdrive/import-po/sync', async function(req, res) {
+    try {
+        var force = req.query.force === 'true' || req.body.force === true;
+        console.log('Manual Import PO sync triggered (force=' + force + ')');
+        var result = await syncImportPOsFromWorkDrive(force);
+        res.json(result);
+    } catch (err) {
+        console.error('Import PO sync error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Get Import PO sync status
+app.get('/api/workdrive/import-po/status', async function(req, res) {
+    try {
+        var isConfigured = !!(WORKDRIVE_IMPORT_PO_FOLDER_ID);
+
+        // Get last sync info
+        var lastSync = await pool.query(
+            "SELECT created_at, records_imported, error_message FROM import_history WHERE import_type = 'import_po_sync' ORDER BY created_at DESC LIMIT 1"
+        );
+
+        // Check what files are in the folder
+        var folderFiles = [];
+        var latestFileName = null;
+        if (isConfigured) {
+            try {
+                var listResult = await listWorkDriveFolder(WORKDRIVE_IMPORT_PO_FOLDER_ID);
+                if (listResult.success) {
+                    folderFiles = listResult.files
+                        .filter(function(f) { return f.attributes && f.attributes.name && f.attributes.name.toLowerCase().endsWith('.csv'); })
+                        .map(function(f) { return { name: f.attributes.name, modified: f.attributes.modified_time }; })
+                        .slice(0, 5);
+                    var latestFile = findLatestCSV(listResult.files);
+                    if (latestFile) {
+                        latestFileName = latestFile.attributes.name;
+                    }
+                }
+            } catch (err) {
+                console.log('Could not list Import PO folder:', err.message);
+            }
+        }
+
+        res.json({
+            configured: isConfigured,
+            folderId: WORKDRIVE_IMPORT_PO_FOLDER_ID || null,
             lastSync: lastSync.rows.length > 0 ? lastSync.rows[0].created_at : null,
             lastSyncRecords: lastSync.rows.length > 0 ? lastSync.rows[0].records_imported : null,
             lastSyncFile: lastSync.rows.length > 0 ? lastSync.rows[0].error_message : null,
@@ -3640,10 +3907,19 @@ function getHTML() {
     html += '<div id="folderList" style="max-height:100px;overflow-y:auto"></div>';
     html += '</div>';
     html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
-    html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync from WorkDrive</button>';
+    html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync Sales Orders</button>';
     html += '<button class="btn btn-secondary" onclick="toggleFolderBrowser()" id="workdriveBrowseBtn" style="flex:1">📂 Browse Folders</button>';
     html += '</div>';
     html += '<div id="workdriveSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    html += '</div>';
+    // Import PO Sync Section
+    html += '<div class="settings-card" style="margin-top:1rem">';
+    html += '<h3 style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">📦</span> Import PO Sync</h3>';
+    html += '<div id="importPOStatus" style="font-size:0.8125rem;color:#86868b;margin-bottom:0.75rem">Checking status...</div>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
+    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync Import POs</button>';
+    html += '</div>';
+    html += '<div id="importPOSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
     html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
@@ -5754,6 +6030,7 @@ function getHTML() {
     html += '});';
     html += 'checkTokenStatus();';
     html += 'checkWorkDriveStatus();';
+    html += 'checkImportPOStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
@@ -5911,6 +6188,66 @@ function getHTML() {
     html += 'btn.textContent = "🔄 Sync from WorkDrive";';
     html += '}';
     html += 'checkWorkDriveStatus();';
+    html += '}';
+
+    // Import PO sync functions
+    html += 'async function checkImportPOStatus() {';
+    html += 'var statusEl = document.getElementById("importPOStatus");';
+    html += 'try {';
+    html += 'var res = await fetch("/api/workdrive/import-po/status");';
+    html += 'var data = await res.json();';
+    html += 'if (data.error) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'return;';
+    html += '}';
+    html += 'if (!data.configured) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">⚠️ Not configured</span><br><span style="font-size:0.75rem;color:#86868b">Set WORKDRIVE_IMPORT_PO_FOLDER_ID in Railway environment</span>\';';
+    html += 'document.getElementById("importPOSyncBtn").disabled = true;';
+    html += 'return;';
+    html += '}';
+    html += 'var html = \'<span style="color:#34c759">✓ Import PO folder connected</span><br>\';';
+    html += 'if (data.latestAvailableFile) {';
+    html += 'html += \'<span style="font-size:0.75rem;color:#1e3a5f">Latest file: \' + data.latestAvailableFile + "</span><br>";';
+    html += '}';
+    html += 'if (data.lastSync) {';
+    html += 'var syncDate = new Date(data.lastSync).toLocaleString();';
+    html += 'html += \'<span style="font-size:0.75rem;color:#86868b">Last sync: \' + syncDate + " (" + (data.lastSyncRecords || 0) + " records)</span><br>";';
+    html += '} else {';
+    html += 'html += \'<span style="font-size:0.75rem;color:#ff9500">Never synced</span>\';';
+    html += '}';
+    html += 'statusEl.innerHTML = html;';
+    html += '} catch(e) { statusEl.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>"; }';
+    html += '}';
+    html += 'async function syncImportPOs() {';
+    html += 'var btn = document.getElementById("importPOSyncBtn");';
+    html += 'var result = document.getElementById("importPOSyncResult");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Syncing...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Fetching Import PO CSV from WorkDrive...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/workdrive/import-po/sync?force=true", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'if (data.skipped) {';
+    html += 'result.innerHTML = \'<span style="color:#ff9500">⚠️ \' + data.message + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += '} else {';
+    html += 'var msg = "✓ " + (data.imported || 0) + " inserted, " + (data.updated || 0) + " updated from " + data.fileName;';
+    html += 'result.innerHTML = \'<span style="color:#34c759">\' + msg + "</span>";';
+    html += 'setTimeout(function() { location.reload(); }, 1500);';
+    html += '}';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += '}';
+    html += '} catch(e) {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += '}';
+    html += 'checkImportPOStatus();';
     html += '}';
 
     // WorkDrive folder browser
@@ -6271,6 +6608,33 @@ initDB().then(function() {
             console.log('WorkDrive auto-sync scheduled for 3 AM ET daily');
         } else {
             console.log('WorkDrive auto-sync not enabled (no folder ID configured)');
+        }
+
+        // Schedule automatic Import PO sync at 3:15 AM daily (after Sales Orders sync)
+        if (WORKDRIVE_IMPORT_PO_FOLDER_ID) {
+            cron.schedule('15 3 * * *', async function() {
+                console.log('=== SCHEDULED IMPORT PO SYNC STARTING (3:15 AM) ===');
+                try {
+                    var result = await syncImportPOsFromWorkDrive(false); // Don't force - only sync if file changed
+                    if (result.success) {
+                        if (result.skipped) {
+                            console.log('Scheduled Import PO sync: No new file to import');
+                        } else {
+                            console.log('Scheduled Import PO sync: ' + result.imported + ' inserted, ' + result.updated + ' updated from ' + result.fileName);
+                        }
+                    } else {
+                        console.error('Scheduled Import PO sync failed:', result.error);
+                    }
+                } catch (err) {
+                    console.error('Scheduled Import PO sync error:', err);
+                }
+                console.log('=== SCHEDULED IMPORT PO SYNC COMPLETE ===');
+            }, {
+                timezone: 'America/New_York' // Eastern Time
+            });
+            console.log('Import PO auto-sync scheduled for 3:15 AM ET daily');
+        } else {
+            console.log('Import PO auto-sync not enabled (no folder ID configured)');
         }
 
         // Schedule automatic image pre-cache at 4 AM daily (after CSV sync)
