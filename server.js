@@ -6420,7 +6420,7 @@ function getHTML() {
     html += 'if (data.skipped) {';
     html += 'result.innerHTML = \'<span style="color:#ff9500">⚠️ \' + data.message + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
+    html += 'btn.textContent = "📦 Sync Import SOs & POs";';
     html += '} else {';
     html += 'var msg = "✓ " + (data.imported || 0) + " inserted, " + (data.updated || 0) + " updated from " + data.fileName;';
     html += 'result.innerHTML = \'<span style="color:#34c759">\' + msg + "</span>";';
@@ -6429,12 +6429,12 @@ function getHTML() {
     html += '} else {';
     html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
+    html += 'btn.textContent = "📦 Sync Import SOs & POs";';
     html += '}';
     html += '} catch(e) {';
     html += 'result.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
+    html += 'btn.textContent = "📦 Sync Import SOs & POs";';
     html += '}';
     html += 'checkImportPOStatus();';
     html += '}';
