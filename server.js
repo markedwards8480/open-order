@@ -355,8 +355,9 @@ async function syncFromZohoAnalytics() {
 // ============================================
 
 // WorkDrive folder configuration - Catalog Files/Open Sales Query
+// Same folder contains both Sales Orders CSV and Import POs CSV
 var WORKDRIVE_SYNC_FOLDER_ID = process.env.WORKDRIVE_SYNC_FOLDER_ID || '';
-var WORKDRIVE_IMPORT_PO_FOLDER_ID = process.env.WORKDRIVE_IMPORT_PO_FOLDER_ID || '';
+var WORKDRIVE_IMPORT_PO_FOLDER_ID = WORKDRIVE_SYNC_FOLDER_ID; // Uses same folder
 var WORKDRIVE_TEAM_ID = process.env.WORKDRIVE_TEAM_ID || '';
 
 // List files in a WorkDrive folder - tries multiple API endpoints
@@ -695,7 +696,7 @@ async function syncImportPOsFromWorkDrive(force) {
     console.log('Starting Import PO sync from WorkDrive... (force=' + !!force + ')');
 
     if (!WORKDRIVE_IMPORT_PO_FOLDER_ID) {
-        return { success: false, error: 'Import PO folder ID not configured. Set WORKDRIVE_IMPORT_PO_FOLDER_ID in environment.' };
+        return { success: false, error: 'WorkDrive folder not configured. Set WORKDRIVE_SYNC_FOLDER_ID in environment.' };
     }
 
     // List files in folder
@@ -6390,7 +6391,7 @@ function getHTML() {
     html += 'return;';
     html += '}';
     html += 'if (!data.configured) {';
-    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">⚠️ Not configured</span><br><span style="font-size:0.75rem;color:#86868b">Set WORKDRIVE_IMPORT_PO_FOLDER_ID in Railway environment</span>\';';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff9500">⚠️ Not configured</span><br><span style="font-size:0.75rem;color:#86868b">Set WORKDRIVE_SYNC_FOLDER_ID in Railway environment</span>\';';
     html += 'document.getElementById("importPOSyncBtn").disabled = true;';
     html += 'return;';
     html += '}';
