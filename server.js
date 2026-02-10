@@ -871,11 +871,12 @@ async function syncImportPOsFromWorkDrive(force) {
                 `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
                 updated++;
             } else {
-                // Insert new
+                // Insert new - use "IMP-" prefix for so_number since Import POs may not have a sales order
+                var soNumber = 'IMP-' + poNumber;
                 await pool.query(`
-                    INSERT INTO order_items (po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'Open')
-                `, [poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer]);
+                    INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'Open')
+                `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer]);
                 imported++;
             }
         } catch (rowErr) {
@@ -3144,11 +3145,12 @@ app.post('/api/webhook/import-po', async function(req, res) {
                     `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
                     console.log('Updated PO:', poNumber, styleNumber, color);
                 } else {
-                    // Insert new
+                    // Insert new - use "IMP-" prefix for so_number since Import POs may not have a sales order
+                    var soNumber = 'IMP-' + poNumber;
                     await pool.query(`
-                        INSERT INTO order_items (po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'Open')
-                    `, [poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer]);
+                        INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'Open')
+                    `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer]);
                     console.log('Inserted PO:', poNumber, styleNumber, color);
                 }
 
