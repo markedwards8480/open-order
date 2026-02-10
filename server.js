@@ -3520,7 +3520,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity", styleSearch: "" };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity", styleSearch: "", poTilesLimit: 200 };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -3775,7 +3775,7 @@ function getHTML() {
     // Right side - top styles
     html += 'out += \'<div class="dashboard-products">\';';
     html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
-    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 200) + \' of \' + items.length + \')</span></h3>\';';
+    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, state.poTilesLimit) + \' of \' + items.length + \')</span></h3>\';';
     html += 'out += \'<div style="display:flex;gap:0.5rem">\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.stackByStyle ? " active" : "") + \'" onclick="toggleStackByStylePO()">🎨 Stack Colors</button>\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.groupByVendor ? " active" : "") + \'" onclick="toggleGroupByVendor()">🏭 Group by Vendor</button>\';';
@@ -3819,7 +3819,7 @@ function getHTML() {
     html += 'if (state.stackByStyle) {';
     // Group items by base style
     html += 'var styleGroups = {};';
-    html += 'items.slice(0, 200).forEach(function(item) {';
+    html += 'items.slice(0, state.poTilesLimit).forEach(function(item) {';
     html += 'var baseStyle = item.style_number.split("-")[0];';
     html += 'if (!styleGroups[baseStyle]) styleGroups[baseStyle] = [];';
     html += 'styleGroups[baseStyle].push(item);';
@@ -3889,7 +3889,7 @@ function getHTML() {
     html += '}});';
     html += '} else {';
     // Original non-stacked view
-    html += 'items.slice(0, 200).forEach(function(item) {';
+    html += 'items.slice(0, state.poTilesLimit).forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
@@ -3908,6 +3908,10 @@ function getHTML() {
     html += '});';
     html += '}';
     html += 'out += \'</div>\';';
+    // Load More button if there are more items
+    html += 'if (items.length > state.poTilesLimit) {';
+    html += 'out += \'<div style="text-align:center;padding:1.5rem"><button onclick="loadMorePOTiles()" style="background:#0088c2;color:white;border:none;padding:0.75rem 2rem;border-radius:980px;font-size:0.875rem;font-weight:600;cursor:pointer">Load More (\' + (items.length - state.poTilesLimit) + \' remaining)</button></div>\';';
+    html += '}';
     html += '}';
     html += 'out += \'</div>\';';
     html += 'out += \'</div>\';'; // end dashboard-layout
@@ -5193,6 +5197,12 @@ function getHTML() {
     html += 'if (state.data) renderPOContent(state.data);';
     html += '}';
 
+    // Load more PO tiles
+    html += 'function loadMorePOTiles() {';
+    html += 'state.poTilesLimit += 200;';
+    html += 'if (state.data) renderPOContent(state.data);';
+    html += '}';
+
     html += 'function toggleStackPO(baseStyle, event) {';
     html += 'event.stopPropagation();';
     html += 'if (state.expandedStacks[baseStyle]) {';
@@ -5771,6 +5781,7 @@ function getHTML() {
     html += 'if (state.mode === mode) return;';
     html += 'state.mode = mode;';
     html += 'state.view = "dashboard";'; // Reset to dashboard when switching modes
+    html += 'state.poTilesLimit = 200;'; // Reset tile limit when switching modes
     html += 'document.querySelectorAll(".mode-btn").forEach(function(b) { b.classList.remove("active"); });';
     html += 'document.querySelector(".mode-btn[data-mode=\'" + mode + "\']").classList.add("active");';
     html += 'if (mode === "po") {';
@@ -5863,6 +5874,7 @@ function getHTML() {
     html += 'function clearFilters() {';
     html += 'state.filters = { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: state.filters.status, poStatus: state.filters.poStatus };';
     html += 'state.styleSearch = "";';
+    html += 'state.poTilesLimit = 200;'; // Reset tile limit when clearing filters
     html += 'document.getElementById("styleSearchInput").value = "";';
     html += 'document.getElementById("styleSearchClear").style.display = "none";';
     // Clear all multi-select checkboxes and reset displays
