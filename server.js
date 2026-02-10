@@ -3914,12 +3914,12 @@ function getHTML() {
     html += '</div>';
     html += '<div id="workdriveSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
     html += '</div>';
-    // Import PO Sync Section
+    // Import SO's & PO's Sync Section
     html += '<div class="settings-card" style="margin-top:1rem">';
-    html += '<h3 style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">📦</span> Import PO Sync</h3>';
+    html += '<h3 style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">📦</span> Import SO\'s & PO\'s Sync</h3>';
     html += '<div id="importPOStatus" style="font-size:0.8125rem;color:#86868b;margin-bottom:0.75rem">Checking status...</div>';
     html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
-    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync Import POs</button>';
+    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync Import SO\'s & PO\'s</button>';
     html += '</div>';
     html += '<div id="importPOSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
     html += '</div>';
@@ -6233,7 +6233,7 @@ function getHTML() {
     html += 'if (data.skipped) {';
     html += 'result.innerHTML = \'<span style="color:#ff9500">⚠️ \' + data.message + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
     html += '} else {';
     html += 'var msg = "✓ " + (data.imported || 0) + " inserted, " + (data.updated || 0) + " updated from " + data.fileName;';
     html += 'result.innerHTML = \'<span style="color:#34c759">\' + msg + "</span>";';
@@ -6242,12 +6242,12 @@ function getHTML() {
     html += '} else {';
     html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
     html += '}';
     html += '} catch(e) {';
     html += 'result.innerHTML = \'<span style="color:#ff3b30">Sync failed: \' + e.message + "</span>";';
     html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📦 Sync Import POs";';
+    html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
     html += '}';
     html += 'checkImportPOStatus();';
     html += '}';
