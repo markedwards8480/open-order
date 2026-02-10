@@ -1044,6 +1044,17 @@ async function initDB() {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
 
+        // Export jobs table - track Zoho Flow export triggers and callbacks
+        await pool.query(`CREATE TABLE IF NOT EXISTS export_jobs (
+            id SERIAL PRIMARY KEY,
+            job_id VARCHAR(100) UNIQUE NOT NULL,
+            job_type VARCHAR(50) DEFAULT 'import_po',
+            status VARCHAR(50) DEFAULT 'pending',
+            triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            error_message TEXT
+        )`);
+
         // Load stored Zoho token
         var tokenResult = await pool.query('SELECT * FROM zoho_tokens ORDER BY id DESC LIMIT 1');
         if (tokenResult.rows.length > 0) {
@@ -3204,6 +3215,145 @@ app.get('/api/webhook/import-po', function(req, res) {
     });
 });
 
+// ============================================
+// ZOHO FLOW EXPORT TRIGGER & CALLBACK
+// ============================================
+// Environment variable for Felix's Zoho Flow webhook URL
+var ZOHO_FLOW_WEBHOOK_URL = process.env.ZOHO_FLOW_WEBHOOK_URL || '';
+
+// Trigger Zoho Flow to export data
+app.post('/api/trigger-export', async function(req, res) {
+    console.log('=== EXPORT TRIGGER REQUESTED ===');
+
+    try {
+        if (!ZOHO_FLOW_WEBHOOK_URL) {
+            return res.json({
+                success: false,
+                error: 'Zoho Flow webhook URL not configured. Set ZOHO_FLOW_WEBHOOK_URL in environment.'
+            });
+        }
+
+        var jobId = 'export_' + Date.now();
+        var jobType = req.body.jobType || 'import_po';
+        var callbackUrl = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho-export-callback';
+
+        // Save job to database
+        await pool.query(
+            'INSERT INTO export_jobs (job_id, job_type, status) VALUES ($1, $2, $3)',
+            [jobId, jobType, 'pending']
+        );
+
+        console.log('Created export job:', jobId);
+        console.log('Calling Zoho Flow webhook:', ZOHO_FLOW_WEBHOOK_URL);
+
+        // Call Felix's Zoho Flow webhook
+        var flowResponse = await fetch(ZOHO_FLOW_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jobId: jobId,
+                jobType: jobType,
+                callbackUrl: callbackUrl,
+                triggeredAt: new Date().toISOString()
+            })
+        });
+
+        var flowResult = await flowResponse.text();
+        console.log('Zoho Flow response:', flowResponse.status, flowResult);
+
+        // Update status to processing
+        await pool.query(
+            'UPDATE export_jobs SET status = $1 WHERE job_id = $2',
+            ['processing', jobId]
+        );
+
+        console.log('Export job now processing:', jobId);
+
+        res.json({
+            success: true,
+            jobId: jobId,
+            status: 'processing',
+            message: 'Export triggered. Felix\'s Zoho Flow is running. This may take 10-15 minutes.'
+        });
+
+    } catch (err) {
+        console.error('Export trigger error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Callback endpoint - Felix's Zoho Flow calls this when export is done
+app.post('/api/zoho-export-callback', async function(req, res) {
+    console.log('=== ZOHO EXPORT CALLBACK RECEIVED ===');
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
+    try {
+        var { jobId, status, message, error } = req.body;
+
+        if (!jobId) {
+            return res.status(400).json({ success: false, error: 'Missing jobId' });
+        }
+
+        // Update the job status
+        var newStatus = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status || 'completed';
+
+        await pool.query(
+            'UPDATE export_jobs SET status = $1, completed_at = NOW(), error_message = $2 WHERE job_id = $3',
+            [newStatus, error || message || null, jobId]
+        );
+
+        console.log('Export job updated:', jobId, '->', newStatus);
+
+        // If completed successfully, trigger WorkDrive sync to import the new files
+        if (newStatus === 'completed') {
+            console.log('Export completed, triggering WorkDrive sync...');
+            // Auto-sync Import POs from WorkDrive after export completes
+            setTimeout(async function() {
+                try {
+                    var syncResult = await syncImportPOsFromWorkDrive(true); // Force sync
+                    console.log('Auto-sync result:', syncResult);
+                } catch (syncErr) {
+                    console.error('Auto-sync error:', syncErr);
+                }
+            }, 5000); // Wait 5 seconds for files to be fully written
+        }
+
+        res.json({ success: true, message: 'Callback received', jobId: jobId, status: newStatus });
+
+    } catch (err) {
+        console.error('Callback error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Get export job status
+app.get('/api/export-jobs', async function(req, res) {
+    try {
+        var jobs = await pool.query(
+            'SELECT * FROM export_jobs ORDER BY triggered_at DESC LIMIT 10'
+        );
+        res.json({ success: true, jobs: jobs.rows });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Get specific job status
+app.get('/api/export-jobs/:jobId', async function(req, res) {
+    try {
+        var job = await pool.query(
+            'SELECT * FROM export_jobs WHERE job_id = $1',
+            [req.params.jobId]
+        );
+        if (job.rows.length === 0) {
+            return res.json({ success: false, error: 'Job not found' });
+        }
+        res.json({ success: true, job: job.rows[0] });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // Debug endpoint to check date data
 app.get('/api/debug/dates', async function(req, res) {
     try {
@@ -3918,10 +4068,20 @@ function getHTML() {
     html += '<div class="settings-card" style="margin-top:1rem">';
     html += '<h3 style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">📦</span> Import SO\'s & PO\'s Sync</h3>';
     html += '<div id="importPOStatus" style="font-size:0.8125rem;color:#86868b;margin-bottom:0.75rem">Checking status...</div>';
-    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
-    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync Import SO\'s & PO\'s</button>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem">';
+    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync from WorkDrive</button>';
     html += '</div>';
     html += '<div id="importPOSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    // Zoho Flow Export Trigger section
+    html += '<hr style="margin:1rem 0;border:none;border-top:1px solid #e5e5e5">';
+    html += '<div style="font-weight:600;font-size:0.875rem;color:#1e3a5f;margin-bottom:0.5rem">🔄 Trigger Zoho Export</div>';
+    html += '<p style="color:#86868b;font-size:0.75rem;margin-bottom:0.75rem">Request Felix\'s Zoho Flow to export fresh data. Takes ~10-15 min. Files will auto-sync when done.</p>';
+    html += '<div id="exportJobStatus" style="font-size:0.8125rem;color:#86868b;margin-bottom:0.75rem"></div>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
+    html += '<button class="btn btn-secondary" onclick="triggerZohoExport()" id="triggerExportBtn" style="flex:1">🚀 Trigger Export</button>';
+    html += '<button class="btn btn-secondary" onclick="checkExportStatus()" id="checkExportBtn" style="flex:1">📊 Check Status</button>';
+    html += '</div>';
+    html += '<div id="exportResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
     html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
@@ -6033,6 +6193,7 @@ function getHTML() {
     html += 'checkTokenStatus();';
     html += 'checkWorkDriveStatus();';
     html += 'checkImportPOStatus();';
+    html += 'checkExportStatus();';
     html += '}';
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
@@ -6250,6 +6411,56 @@ function getHTML() {
     html += 'btn.textContent = "📦 Sync Import SO\\'s & PO\\'s";';
     html += '}';
     html += 'checkImportPOStatus();';
+    html += '}';
+
+    // Zoho Flow Export Trigger functions
+    html += 'async function triggerZohoExport() {';
+    html += 'var btn = document.getElementById("triggerExportBtn");';
+    html += 'var result = document.getElementById("exportResult");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Triggering...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Sending request to Zoho Flow...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/trigger-export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobType: "import_po" }) });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Export triggered!</span><br><span style="font-size:0.75rem;color:#86868b">Job ID: \' + data.jobId + "<br>Status: " + data.status + "<br>" + data.message + "</span>";';
+    html += 'btn.textContent = "🚀 Trigger Export";';
+    html += 'btn.disabled = false;';
+    html += 'checkExportStatus();';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + data.error + "</span>";';
+    html += 'btn.textContent = "🚀 Trigger Export";';
+    html += 'btn.disabled = false;';
+    html += '}';
+    html += '} catch(e) {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Failed: \' + e.message + "</span>";';
+    html += 'btn.textContent = "🚀 Trigger Export";';
+    html += 'btn.disabled = false;';
+    html += '}';
+    html += '}';
+
+    html += 'async function checkExportStatus() {';
+    html += 'var statusEl = document.getElementById("exportJobStatus");';
+    html += 'try {';
+    html += 'var res = await fetch("/api/export-jobs");';
+    html += 'var data = await res.json();';
+    html += 'if (!data.success || !data.jobs || data.jobs.length === 0) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#86868b">No export jobs found</span>\';';
+    html += 'return;';
+    html += '}';
+    html += 'var job = data.jobs[0];';
+    html += 'var statusColor = job.status === "completed" ? "#34c759" : job.status === "failed" ? "#ff3b30" : job.status === "processing" ? "#ff9500" : "#86868b";';
+    html += 'var statusIcon = job.status === "completed" ? "✓" : job.status === "failed" ? "✗" : job.status === "processing" ? "⏳" : "○";';
+    html += 'var timeStr = new Date(job.triggered_at).toLocaleString();';
+    html += 'statusEl.innerHTML = \'<span style="color:\' + statusColor + \'"><strong>\' + statusIcon + " " + job.status.toUpperCase() + \'</strong></span><br>\' +';
+    html += '\'<span style="font-size:0.75rem;color:#86868b">Job: \' + job.job_id + "<br>Started: " + timeStr + "</span>";';
+    html += 'if (job.status === "processing") {';
+    html += 'setTimeout(checkExportStatus, 30000);'; // Auto-refresh every 30 seconds if processing
+    html += '}';
+    html += '} catch(e) {';
+    html += 'statusEl.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>";';
+    html += '}';
     html += '}';
 
     // WorkDrive folder browser
