@@ -741,7 +741,7 @@ async function syncImportPOsFromWorkDrive(force) {
     }
 
     // Parse CSV - Import PO specific columns
-    var rows = downloadResult.data.split('\n');
+    var rows = downloadResult.content.split('\n');
     if (rows.length < 2) {
         return { success: false, error: 'CSV file is empty or has no data rows' };
     }
