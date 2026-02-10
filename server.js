@@ -3775,7 +3775,7 @@ function getHTML() {
     // Right side - top styles
     html += 'out += \'<div class="dashboard-products">\';';
     html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
-    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 50) + \' of \' + items.length + \')</span></h3>\';';
+    html += 'out += \'<h3 style="margin:0;color:#1e3a5f">📦 Top Styles by PO Value <span style="font-size:0.75rem;color:#86868b;font-weight:normal">(showing \' + Math.min(items.length, 200) + \' of \' + items.length + \')</span></h3>\';';
     html += 'out += \'<div style="display:flex;gap:0.5rem">\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.stackByStyle ? " active" : "") + \'" onclick="toggleStackByStylePO()">🎨 Stack Colors</button>\';';
     html += 'out += \'<button class="group-toggle-btn\' + (state.groupByVendor ? " active" : "") + \'" onclick="toggleGroupByVendor()">🏭 Group by Vendor</button>\';';
@@ -3819,7 +3819,7 @@ function getHTML() {
     html += 'if (state.stackByStyle) {';
     // Group items by base style
     html += 'var styleGroups = {};';
-    html += 'items.slice(0, 50).forEach(function(item) {';
+    html += 'items.slice(0, 200).forEach(function(item) {';
     html += 'var baseStyle = item.style_number.split("-")[0];';
     html += 'if (!styleGroups[baseStyle]) styleGroups[baseStyle] = [];';
     html += 'styleGroups[baseStyle].push(item);';
@@ -3889,7 +3889,7 @@ function getHTML() {
     html += '}});';
     html += '} else {';
     // Original non-stacked view
-    html += 'items.slice(0, 50).forEach(function(item) {';
+    html += 'items.slice(0, 200).forEach(function(item) {';
     html += 'var imgSrc = item.image_url || "";';
     html += 'if (imgSrc) { var match = imgSrc.match(/\\/download\\/([a-zA-Z0-9]+)/); if (match) imgSrc = "/api/image/" + match[1]; }';
     html += 'var fileId = imgSrc.startsWith("/api/image/") ? imgSrc.replace("/api/image/", "") : "";';
