@@ -4005,8 +4005,9 @@ function getHTML() {
     html += 'function renderPOPriceCompare(container, data) {';
     html += 'var items = data.items || [];';
     html += 'if (items.length === 0) { container.innerHTML = \'<div class="empty-state"><h3>No Import POs found</h3></div>\'; return; }';
-    // State for SKU vs Base Style toggle
+    // State for SKU vs Base Style toggle and variance filter
     html += 'var mode = window._priceCompareMode || "sku";';
+    html += 'var showVarianceOnly = window._priceCompareVarianceOnly || false;';
     // Build grouped data
     html += 'var groups = {};';
     html += 'items.forEach(function(item) {';
@@ -4038,63 +4039,137 @@ function getHTML() {
     html += 'return g; });';
     // Sort groups: styles with variance first (desc), then by total dollars
     html += 'groupList.sort(function(a,b) { if (b.variance !== a.variance) return b.variance - a.variance; return b.totalDollars - a.totalDollars; });';
-    // Count styles with variance
+    // Count styles with variance and calculate totals
     html += 'var withVariance = groupList.filter(function(g) { return g.variance > 0; }).length;';
+    html += 'var totalVarianceDollars = groupList.filter(function(g) { return g.variance > 0; }).reduce(function(sum, g) { return sum + g.totalDollars; }, 0);';
+    html += 'var maxVariancePct = groupList.length > 0 ? Math.max.apply(null, groupList.map(function(g) { return g.variancePct; })) : 0;';
+    // Filter list if variance only mode
+    html += 'var displayList = showVarianceOnly ? groupList.filter(function(g) { return g.variance > 0; }) : groupList;';
     // Build HTML
     html += 'var out = "";';
-    // Header with toggle
+    // Summary cards at top
+    html += 'out += \'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem">\';';
+    // Card 1: Styles with variance
+    html += 'out += \'<div style="background:linear-gradient(135deg,#fff5f5 0%,#fff 100%);border:1px solid #ffccc7;border-radius:12px;padding:1rem;border-left:4px solid #ff3b30">\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#86868b;text-transform:uppercase;letter-spacing:0.5px">Styles with Variance</div>\';';
+    html += 'out += \'<div style="font-size:1.75rem;font-weight:700;color:#ff3b30;margin:0.25rem 0">\' + withVariance + \'</div>\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#6e6e73">of \' + groupList.length + \' total styles</div>\';';
+    html += 'out += \'</div>\';';
+    // Card 2: Value at risk
+    html += 'out += \'<div style="background:linear-gradient(135deg,#fff7ed 0%,#fff 100%);border:1px solid #fed7aa;border-radius:12px;padding:1rem;border-left:4px solid #ff9500">\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#86868b;text-transform:uppercase;letter-spacing:0.5px">Value with Price Variance</div>\';';
+    html += 'out += \'<div style="font-size:1.75rem;font-weight:700;color:#ff9500;margin:0.25rem 0">$\' + formatNumber(Math.round(totalVarianceDollars)) + \'</div>\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#6e6e73">across affected POs</div>\';';
+    html += 'out += \'</div>\';';
+    // Card 3: Max variance
+    html += 'out += \'<div style="background:linear-gradient(135deg,#fef3c7 0%,#fff 100%);border:1px solid #fde68a;border-radius:12px;padding:1rem;border-left:4px solid #f59e0b">\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#86868b;text-transform:uppercase;letter-spacing:0.5px">Highest Variance</div>\';';
+    html += 'out += \'<div style="font-size:1.75rem;font-weight:700;color:#f59e0b;margin:0.25rem 0">\' + maxVariancePct.toFixed(0) + \'%</div>\';';
+    html += 'out += \'<div style="font-size:0.75rem;color:#6e6e73">price spread on a style</div>\';';
+    html += 'out += \'</div>\';';
+    html += 'out += \'</div>\';';
+    // Header with toggles
     html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
     html += 'out += \'<div><h3 style="margin:0;color:#1e3a5f">💰 Price Compare</h3>\';';
-    html += 'out += \'<p style="margin:0.25rem 0 0;color:#86868b;font-size:0.8125rem">\' + withVariance + \' of \' + groupList.length + \' styles have pricing differences</p></div>\';';
+    html += 'out += \'<p style="margin:0.25rem 0 0;color:#86868b;font-size:0.8125rem">Click any row to see PO details</p></div>\';';
+    // Toggle buttons container
+    html += 'out += \'<div style="display:flex;gap:0.5rem;flex-wrap:wrap">\';';
+    // Variance Only toggle
+    html += 'out += \'<button onclick="window._priceCompareVarianceOnly=!\' + showVarianceOnly + \';renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:1px solid \' + (showVarianceOnly ? "#ff3b30" : "#e0e0e0") + \';border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;background:\' + (showVarianceOnly ? "#fff5f5" : "#fff") + \';color:\' + (showVarianceOnly ? "#ff3b30" : "#6e6e73") + \'">\' + (showVarianceOnly ? "⚠️ Variance Only" : "Show All") + \'</button>\';';
     // SKU / Base Style toggle
     html += 'out += \'<div style="display:flex;background:#f0f4f8;border-radius:980px;padding:3px">\';';
     html += 'out += \'<button onclick="window._priceCompareMode=\\x27sku\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "sku" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">SKU Level</button>\';';
     html += 'out += \'<button onclick="window._priceCompareMode=\\x27base\\x27;renderPOPriceCompare(document.getElementById(\\x27content\\x27),state.data)" style="padding:0.4rem 1rem;border:none;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;\' + (mode === "base" ? "background:#1e3a5f;color:white" : "background:transparent;color:#6e6e73") + \'">Base Style</button>\';';
-    html += 'out += \'</div></div>\';';
+    html += 'out += \'</div></div></div>\';';
     // Table
     html += 'out += \'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.8125rem">\';';
     html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left">\';';
     html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">Style</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Commodity</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:center">Vendors</th>\';';
-    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Low Price</th>\';';
-    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">High Price</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;min-width:180px">Price Range</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Variance</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Total Qty</th>\';';
     html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f;text-align:right">Total Value</th>\';';
     html += 'out += \'</tr></thead><tbody>\';';
     // Render each group
-    html += 'groupList.forEach(function(g, idx) {';
-    // Color code: red for high variance, orange for moderate, none for zero
-    html += 'var borderColor = g.variance === 0 ? "transparent" : g.variancePct > 20 ? "#ff3b30" : g.variancePct > 10 ? "#ff9500" : "#ffcc00";';
-    html += 'var bgColor = idx % 2 === 0 ? "#fff" : "#fafbfc";';
+    html += 'displayList.forEach(function(g, idx) {';
+    // Determine severity color
+    html += 'var severity = g.variance === 0 ? "none" : g.variancePct > 20 ? "high" : g.variancePct > 10 ? "medium" : "low";';
+    html += 'var borderColor = severity === "none" ? "transparent" : severity === "high" ? "#ff3b30" : severity === "medium" ? "#ff9500" : "#ffcc00";';
+    html += 'var rowBg = severity === "none" ? (idx % 2 === 0 ? "#fff" : "#fafbfc") : severity === "high" ? "#fff5f5" : severity === "medium" ? "#fff7ed" : "#fffbeb";';
     // Group header row
-    html += 'out += \'<tr style="background:\' + bgColor + \';border-left:4px solid \' + borderColor + \';cursor:pointer" onclick="var el=this.nextSibling;while(el&&el.classList&&el.classList.contains(\\x27price-detail\\x27)){el.style.display=el.style.display===\\x27none\\x27?\\x27table-row\\x27:\\x27none\\x27;el=el.nextSibling;}">\';';
-    html += 'out += \'<td style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">\' + g.style + \'</td>\';';
+    html += 'out += \'<tr style="background:\' + rowBg + \';border-left:4px solid \' + borderColor + \';cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\\x27#f0f7ff\\x27" onmouseout="this.style.background=\\x27\' + rowBg + \'\\x27" onclick="var el=this.nextSibling;while(el&&el.classList&&el.classList.contains(\\x27price-detail\\x27)){el.style.display=el.style.display===\\x27none\\x27?\\x27table-row\\x27:\\x27none\\x27;el=el.nextSibling;}">\';';
+    html += 'out += \'<td style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">\' + g.style + (g.variance > 0 ? \' <span style="color:#ff9500;font-size:0.75rem">⚠️</span>\' : \'\') + \'</td>\';';
     html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73">\' + g.commodity + \'</td>\';';
     html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:center">\' + g.uniqueVendors + \'</td>\';';
-    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:#34c759;font-weight:600">$\' + g.minPrice.toFixed(2) + \'</td>\';';
-    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;color:\' + (g.variance > 0 ? "#ff3b30" : "#34c759") + \';font-weight:600">$\' + g.maxPrice.toFixed(2) + \'</td>\';';
-    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right;font-weight:700;color:\' + (g.variance === 0 ? "#86868b" : "#ff9500") + \'">\' + (g.variance === 0 ? "-" : "$" + g.variance.toFixed(2) + " (" + g.variancePct.toFixed(0) + "%)") + \'</td>\';';
+    // Price range with visual bar
+    html += 'out += \'<td style="padding:0.625rem 0.5rem">\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem">\';';
+    html += 'out += \'<span style="color:#34c759;font-weight:600;min-width:55px">$\' + g.minPrice.toFixed(2) + \'</span>\';';
+    // Visual price spread bar
+    html += 'if (g.variance > 0) {';
+    html += 'var barWidth = Math.min(100, Math.max(20, g.variancePct * 2));';
+    html += 'out += \'<div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;position:relative;min-width:60px;max-width:100px">\';';
+    html += 'out += \'<div style="position:absolute;left:0;top:0;height:100%;width:\' + barWidth + \'%;background:linear-gradient(90deg,#34c759 0%,#ff9500 50%,#ff3b30 100%);border-radius:4px"></div>\';';
+    html += 'out += \'</div>\';';
+    html += '} else {';
+    html += 'out += \'<div style="flex:1;height:8px;background:#d1fae5;border-radius:4px;min-width:60px;max-width:100px"></div>\';';
+    html += '}';
+    html += 'out += \'<span style="color:\' + (g.variance > 0 ? "#ff3b30" : "#34c759") + \';font-weight:600;min-width:55px;text-align:right">$\' + g.maxPrice.toFixed(2) + \'</span>\';';
+    html += 'out += \'</div></td>\';';
+    // Variance with badge
+    html += 'if (g.variance === 0) {';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right"><span style="background:#d1fae5;color:#059669;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.75rem;font-weight:600">✓ Consistent</span></td>\';';
+    html += '} else {';
+    html += 'var badgeBg = severity === "high" ? "#fee2e2" : severity === "medium" ? "#ffedd5" : "#fef3c7";';
+    html += 'var badgeColor = severity === "high" ? "#dc2626" : severity === "medium" ? "#ea580c" : "#d97706";';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right"><span style="background:\' + badgeBg + \';color:\' + badgeColor + \';padding:0.2rem 0.5rem;border-radius:4px;font-size:0.75rem;font-weight:600">$\' + g.variance.toFixed(2) + \' (\' + g.variancePct.toFixed(0) + \'%)</span></td>\';';
+    html += '}';
     html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:right">\' + formatNumber(g.totalQty) + \'</td>\';';
     html += 'out += \'<td style="padding:0.625rem 1rem;text-align:right;font-weight:600">$\' + formatNumber(Math.round(g.totalDollars)) + \'</td>\';';
     html += 'out += \'</tr>\';';
     // Detail rows (collapsed by default, shown on click)
-    html += 'g.entries.forEach(function(e) {';
+    html += 'g.entries.forEach(function(e, eIdx) {';
     html += 'var isLowest = e.price === g.minPrice;';
     html += 'var isHighest = e.price === g.maxPrice && g.variance > 0;';
-    html += 'out += \'<tr class="price-detail" style="display:none;background:#f8fafc;border-left:4px solid \' + borderColor + \'">\';';
-    html += 'out += \'<td style="padding:0.4rem 1rem 0.4rem 2rem;color:#86868b;font-size:0.75rem">PO# \' + e.po + (e.color ? " · " + e.color : "") + \'</td>\';';
-    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#86868b"></td>\';';
-    html += 'out += \'<td style="padding:0.4rem 0.5rem;font-size:0.75rem;color:#6e6e73">\' + e.vendor + \'</td>\';';
-    html += 'out += \'<td colspan="2" style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;font-weight:600;color:\' + (isLowest && g.variance > 0 ? "#34c759" : isHighest ? "#ff3b30" : "#1e3a5f") + \'">$\' + e.price.toFixed(2) + \'/u</td>\';';
-    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem;color:#86868b">\' + (isLowest && g.variance > 0 ? "✓ Best" : isHighest ? "▲ High" : "") + \'</td>\';';
-    html += 'out += \'<td style="padding:0.4rem 0.5rem;text-align:right;font-size:0.75rem">\' + formatNumber(e.qty) + \'</td>\';';
-    html += 'out += \'<td style="padding:0.4rem 1rem;text-align:right;font-size:0.75rem">$\' + formatNumber(Math.round(e.total)) + \'</td>\';';
+    html += 'var detailBg = isLowest && g.variance > 0 ? "#ecfdf5" : isHighest ? "#fef2f2" : "#f8fafc";';
+    html += 'out += \'<tr class="price-detail" style="display:none;background:\' + detailBg + \';border-left:4px solid \' + borderColor + \'">\';';
+    html += 'out += \'<td style="padding:0.5rem 1rem 0.5rem 2rem;font-size:0.8125rem">\';';
+    html += 'out += \'<div style="font-weight:500;color:#1e3a5f">PO# \' + e.po + \'</div>\';';
+    html += 'if (e.color) out += \'<div style="font-size:0.75rem;color:#86868b">\' + e.color + \'</div>\';';
+    html += 'out += \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;font-size:0.8125rem;color:#6e6e73">\' + e.vendor + \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;text-align:center"></td>\';';
+    // Price with position indicator
+    html += 'out += \'<td style="padding:0.5rem 0.5rem">\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem">\';';
+    html += 'if (isLowest && g.variance > 0) {';
+    html += 'out += \'<span style="background:#d1fae5;color:#059669;padding:0.15rem 0.4rem;border-radius:4px;font-size:0.7rem;font-weight:600">▼ LOWEST</span>\';';
+    html += '} else if (isHighest) {';
+    html += 'out += \'<span style="background:#fee2e2;color:#dc2626;padding:0.15rem 0.4rem;border-radius:4px;font-size:0.7rem;font-weight:600">▲ HIGHEST</span>\';';
+    html += '}';
+    html += 'out += \'<span style="font-weight:600;color:\' + (isLowest && g.variance > 0 ? "#059669" : isHighest ? "#dc2626" : "#1e3a5f") + \';font-size:0.875rem">$\' + e.price.toFixed(2) + \'/unit</span>\';';
+    html += 'out += \'</div></td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;text-align:right;font-size:0.8125rem;color:#86868b">\';';
+    html += 'if (g.variance > 0 && !isLowest) {';
+    html += 'var diff = e.price - g.minPrice;';
+    html += 'out += \'+$\' + diff.toFixed(2) + \' vs best\';';
+    html += '}';
+    html += 'out += \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;text-align:right;font-size:0.8125rem">\' + formatNumber(e.qty) + \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 1rem;text-align:right;font-size:0.8125rem;font-weight:500">$\' + formatNumber(Math.round(e.total)) + \'</td>\';';
     html += 'out += \'</tr>\';';
     html += '});';
     html += '});';
     html += 'out += \'</tbody></table></div>\';';
+    // Legend at bottom
+    html += 'out += \'<div style="margin-top:1rem;padding:0.75rem 1rem;background:#f8fafc;border-radius:8px;display:flex;gap:1.5rem;flex-wrap:wrap;font-size:0.75rem">\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem"><span style="width:12px;height:12px;background:#ff3b30;border-radius:2px"></span> High variance (&gt;20%)</div>\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem"><span style="width:12px;height:12px;background:#ff9500;border-radius:2px"></span> Medium variance (10-20%)</div>\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem"><span style="width:12px;height:12px;background:#ffcc00;border-radius:2px"></span> Low variance (&lt;10%)</div>\';';
+    html += 'out += \'<div style="display:flex;align-items:center;gap:0.5rem"><span style="width:12px;height:12px;background:#d1fae5;border-radius:2px"></span> Consistent pricing</div>\';';
+    html += 'out += \'</div>\';';
     html += 'container.innerHTML = out; }';
 
     // PO Charts view - dedicated charts page
