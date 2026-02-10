@@ -2797,6 +2797,144 @@ app.post('/api/zoho/refresh-token', async function(req, res) {
     });
 });
 
+// ============================================
+// WEBHOOK ENDPOINT FOR ZOHO FLOW INTEGRATION
+// ============================================
+// This endpoint receives Import PO data from Zoho Flow
+// Felix can configure Zoho Flow to POST to this URL when POs are created/updated
+app.post('/api/webhook/import-po', async function(req, res) {
+    console.log('=== WEBHOOK RECEIVED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
+    try {
+        var data = req.body;
+
+        // Support both single PO and array of POs
+        var pos = Array.isArray(data) ? data : [data];
+        var imported = 0;
+        var errors = [];
+
+        for (var po of pos) {
+            try {
+                // Map Zoho field names to our database fields (flexible naming)
+                var poNumber = po.po_number || po.purchase_order_number || po.PO_Number || po.PONumber || '';
+                var vendorName = po.vendor_name || po.vendor || po.Vendor_Name || po.VendorName || po.supplier || po.factory || '';
+                var styleNumber = po.style_number || po.style || po.Style_Number || po.StyleNumber || po.sku || '';
+                var styleName = po.style_name || po.Style_Name || po.StyleName || po.description || '';
+                var commodity = po.commodity || po.Commodity || po.category || po.product_type || '';
+                var color = po.color || po.Color || po.colour || '';
+                var poQuantity = parseFloat(po.po_quantity || po.quantity || po.Quantity || po.qty || 0) || 0;
+                var poUnitPrice = parseFloat(po.po_unit_price || po.unit_price || po.price || po.rate || po.Price || 0) || 0;
+                var poTotal = parseFloat(po.po_total || po.po_total_fcy || po.total || po.Total || po.amount || 0) || 0;
+                var poWarehouseDate = po.po_warehouse_date || po.warehouse_date || po.eta || po.ETA || po.delivery_date || null;
+                var poStatus = po.po_status || po.status || po.Status || 'Open';
+                var imageUrl = po.image_url || po.image || po.style_image || '';
+                var customer = po.customer || po.Customer || '';
+
+                // Calculate total if not provided but we have qty and price
+                if (!poTotal && poQuantity && poUnitPrice) {
+                    poTotal = poQuantity * poUnitPrice;
+                }
+
+                // Validate required fields
+                if (!poNumber || !styleNumber) {
+                    errors.push({ po: poNumber || 'unknown', error: 'Missing required field: po_number or style_number' });
+                    continue;
+                }
+
+                // Parse date if string
+                if (poWarehouseDate && typeof poWarehouseDate === 'string') {
+                    var parsedDate = new Date(poWarehouseDate);
+                    if (!isNaN(parsedDate.getTime())) {
+                        poWarehouseDate = parsedDate.toISOString().split('T')[0];
+                    } else {
+                        poWarehouseDate = null;
+                    }
+                }
+
+                // Upsert: Update if exists, insert if not (based on po_number + style_number + color)
+                var existingRow = await pool.query(
+                    'SELECT id FROM order_items WHERE po_number = $1 AND style_number = $2 AND (color = $3 OR (color IS NULL AND $3 IS NULL))',
+                    [poNumber, styleNumber, color || null]
+                );
+
+                if (existingRow.rows.length > 0) {
+                    // Update existing
+                    await pool.query(`
+                        UPDATE order_items SET
+                            vendor_name = COALESCE($1, vendor_name),
+                            style_name = COALESCE(NULLIF($2, ''), style_name),
+                            commodity = COALESCE(NULLIF($3, ''), commodity),
+                            po_quantity = $4,
+                            po_unit_price = $5,
+                            po_total = $6,
+                            po_warehouse_date = COALESCE($7, po_warehouse_date),
+                            po_status = COALESCE(NULLIF($8, ''), po_status),
+                            image_url = COALESCE(NULLIF($9, ''), image_url),
+                            customer = COALESCE(NULLIF($10, ''), customer)
+                        WHERE po_number = $11 AND style_number = $12 AND (color = $13 OR (color IS NULL AND $13 IS NULL))
+                    `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
+                    console.log('Updated PO:', poNumber, styleNumber, color);
+                } else {
+                    // Insert new
+                    await pool.query(`
+                        INSERT INTO order_items (po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'Open')
+                    `, [poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer]);
+                    console.log('Inserted PO:', poNumber, styleNumber, color);
+                }
+
+                imported++;
+            } catch (rowErr) {
+                console.error('Error processing PO:', rowErr);
+                errors.push({ po: po.po_number || 'unknown', error: rowErr.message });
+            }
+        }
+
+        console.log('=== WEBHOOK COMPLETE ===');
+        console.log('Imported:', imported, 'Errors:', errors.length);
+
+        res.json({
+            success: true,
+            message: 'Webhook processed',
+            imported: imported,
+            errors: errors.length > 0 ? errors : undefined
+        });
+
+    } catch (err) {
+        console.error('Webhook error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
+// Simple GET endpoint to test webhook is reachable
+app.get('/api/webhook/import-po', function(req, res) {
+    res.json({
+        status: 'ready',
+        message: 'Webhook endpoint is active. Send POST requests with Import PO data.',
+        expected_fields: {
+            required: ['po_number', 'style_number'],
+            optional: ['vendor_name', 'style_name', 'commodity', 'color', 'po_quantity', 'po_unit_price', 'po_total', 'po_warehouse_date', 'po_status', 'image_url', 'customer']
+        },
+        example: {
+            po_number: 'PO-12345',
+            style_number: '80596J-CB',
+            vendor_name: 'ABC Factory',
+            commodity: 'Handbags',
+            color: 'Black',
+            po_quantity: 1000,
+            po_unit_price: 12.50,
+            po_total: 12500,
+            po_warehouse_date: '2025-06-15',
+            po_status: 'Open'
+        }
+    });
+});
+
 // Debug endpoint to check date data
 app.get('/api/debug/dates', async function(req, res) {
     try {
