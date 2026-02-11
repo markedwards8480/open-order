@@ -273,8 +273,8 @@ async function syncFromZohoAnalytics() {
     }
 
     // Clear existing data
-    await pool.query('DELETE FROM order_items');
-    await pool.query('DELETE FROM sales_orders');
+    await pool.query('TRUNCATE TABLE order_items RESTART IDENTITY CASCADE');
+    await pool.query('TRUNCATE TABLE sales_orders RESTART IDENTITY CASCADE');
     console.log('Cleared existing data');
 
     var imported = 0;
@@ -581,8 +581,9 @@ async function syncFromWorkDriveFolder(force) {
     var imported = 0;
     var errors = [];
 
-    // Clear existing data but KEEP image_cache
-    await pool.query('DELETE FROM order_items');
+    // Clear existing data but KEEP image_cache (same as manual CSV upload)
+    await pool.query('TRUNCATE TABLE order_items RESTART IDENTITY CASCADE');
+    await pool.query('TRUNCATE TABLE sales_orders RESTART IDENTITY CASCADE');
     console.log('Cleared existing order data (keeping image cache)');
 
     // Column mapping (flexible matching)
@@ -617,6 +618,10 @@ async function syncFromWorkDriveFolder(force) {
 
     console.log('CSV Headers:', headers);
     console.log('Column mapping:', JSON.stringify(mapping));
+
+    // Track SO+style+color combos to prevent double-counting SO quantities
+    // The PO-SO Query CSV has one row per PO line, so the same SO quantity appears multiple times
+    var seenSOKeys = {};
 
     for (var row of rows) {
         try {
@@ -664,6 +669,18 @@ async function syncFromWorkDriveFolder(force) {
             var poUnitPrice = getNumber(mapping.po_unit_price);
             var poTotal = getNumber(mapping.po_total);
             var poWarehouseDate = getDate(mapping.po_warehouse_date);
+
+            // Dedup: only count SO quantity/total on first occurrence of SO+style+color
+            // This prevents double-counting when the PO-SO join creates multiple rows per SO line
+            var soKey = soNumber + '|' + styleNumber + '|' + color;
+            if (seenSOKeys[soKey]) {
+                // Duplicate SO line (different PO) - zero out SO quantities to avoid double-counting
+                quantity = 0;
+                unitPrice = 0;
+                totalAmount = 0;
+            } else {
+                seenSOKeys[soKey] = true;
+            }
 
             await pool.query(`
                 INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date)
@@ -780,6 +797,10 @@ async function syncImportPOsFromWorkDrive(force) {
     var imported = 0;
     var updated = 0;
     var errors = [];
+
+    // Clear existing Import PO data before loading new data (keep sales order data)
+    var deleted = await pool.query("DELETE FROM order_items WHERE so_number LIKE 'IMP-%'");
+    console.log('Cleared ' + (deleted.rowCount || 0) + ' existing Import PO rows');
 
     for (var i = 1; i < rows.length; i++) {
         if (!rows[i].trim()) continue;
@@ -3964,55 +3985,87 @@ function getHTML() {
     html += '<div class="modal upload-modal" id="uploadModal"><div class="modal-content"><button class="modal-close" onclick="closeUploadModal()">&times;</button><h2>Import Sales Orders</h2><p style="color:#86868b;margin-top:0.5rem">Upload a CSV file with your sales order data</p><div class="upload-area" id="uploadArea"><input type="file" id="fileInput" accept=".csv"><div class="upload-icon">📄</div><div class="upload-text">Drag & drop your CSV here or <strong>browse</strong></div></div><div class="upload-progress" id="uploadProgress"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><p style="margin-top:0.5rem;font-size:0.875rem;color:#86868b" id="uploadStatus">Uploading...</p></div></div></div>';
 
     // Settings modal
-    html += '<div class="modal settings-modal" id="settingsModal"><div class="modal-content" style="max-width:450px;padding:2rem">';
+    html += '<div class="modal settings-modal" id="settingsModal"><div class="modal-content" style="max-width:480px;padding:2rem;max-height:85vh;overflow-y:auto">';
     html += '<button class="modal-close" onclick="closeSettingsModal()">&times;</button>';
     html += '<h2>⚙️ Settings</h2>';
-    html += '<div style="margin-top:1.5rem">';
+
+    // === SYNC DATA SECTION ===
+    html += '<div style="margin-top:1.5rem;padding:1.25rem;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:0.75rem">';
+    html += '<h3 style="margin:0 0 0.5rem 0;color:#166534;font-size:1rem">📤 Sync Data</h3>';
+    html += '<p style="color:#4b5563;font-size:0.8125rem;margin-bottom:1rem">Export fresh data from Zoho Analytics and import it automatically.</p>';
+    html += '<button class="btn btn-primary" onclick="triggerExportAndSync()" id="triggerExportBtn" style="width:100%;padding:0.875rem;font-size:0.9375rem;background:#16a34a;border:none;border-radius:0.5rem;color:#fff;cursor:pointer;font-weight:600">📤 Trigger Export & Sync</button>';
+    html += '<div id="triggerExportResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#4b5563;text-align:center"></div>';
+    html += '</div>';
+
+    // === STATUS SECTION ===
+    html += '<div style="margin-top:1.25rem;padding:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.75rem">';
+    html += '<h3 style="margin:0 0 0.75rem 0;color:#1e3a5f;font-size:0.9375rem">📊 Status</h3>';
+    html += '<div style="display:grid;gap:0.5rem;font-size:0.8125rem">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#64748b">Token</span><span id="tokenStatusBadge">Checking...</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#64748b">WorkDrive</span><span id="workdriveStatusBadge">Checking...</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#64748b">Last Sync</span><span id="lastSyncBadge" style="color:#1e293b">-</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#64748b">Images Cached</span><span id="imagesCachedBadge" style="color:#1e293b">-</span></div>';
+    html += '</div>';
+    html += '</div>';
+
+    // === FISCAL YEAR SETTINGS ===
+    html += '<div style="margin-top:1.25rem">';
     html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Default Fiscal Year</label>';
     html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">This fiscal year will be selected automatically when the dashboard loads.</p>';
     html += '<select id="defaultFYSelect" class="filter-select" style="width:100%;padding:0.75rem">';
     html += '<option value="">No Default (show all)</option>';
     html += '</select>';
     html += '</div>';
-    html += '<div style="margin-top:1.5rem">';
+    html += '<div style="margin-top:1.25rem">';
     html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Include Fiscal Years</label>';
     html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Only load data from selected fiscal years. Excluding old years speeds up the app.</p>';
     html += '<div id="fyCheckboxes" style="display:flex;flex-wrap:wrap;gap:0.5rem"></div>';
     html += '</div>';
-    html += '<div style="margin-top:2rem;display:flex;gap:1rem">';
+    html += '<div style="margin-top:1.5rem;display:flex;gap:1rem">';
     html += '<button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>';
     html += '<button class="btn btn-secondary" onclick="closeSettingsModal()" style="flex:1">Cancel</button>';
     html += '</div>';
-    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
+
+    // === ADVANCED SECTION (collapsible) ===
+    html += '<div style="margin-top:1.5rem;border-top:1px solid #e5e5e5;padding-top:1rem">';
+    html += '<button onclick="toggleAdvancedSettings()" id="advancedToggleBtn" style="background:none;border:none;cursor:pointer;font-size:0.875rem;color:#64748b;display:flex;align-items:center;gap:0.5rem;padding:0;font-weight:500"><span id="advancedArrow">▶</span> Advanced</button>';
+    html += '<div id="advancedSettings" style="display:none;margin-top:1rem">';
+
+    // Manual sync buttons
+    html += '<div style="margin-bottom:1rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem;font-size:0.875rem">Manual Sync</label>';
+    html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap">';
+    html += '<button class="btn btn-secondary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1;font-size:0.8125rem;padding:0.5rem">🔄 Sync Sales Orders</button>';
+    html += '<button class="btn btn-secondary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;font-size:0.8125rem;padding:0.5rem">📦 Sync Import POs</button>';
+    html += '</div>';
+    html += '<div id="workdriveSyncResult" style="margin-top:0.5rem;font-size:0.75rem;color:#86868b"></div>';
+    html += '<div id="importPOSyncResult" style="margin-top:0.5rem;font-size:0.75rem;color:#86868b"></div>';
+    html += '</div>';
+
+    // Image pre-caching
+    html += '<div style="margin-bottom:1rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem;font-size:0.875rem">Image Pre-Caching</label>';
+    html += '<div style="display:flex;gap:0.5rem;align-items:center">';
+    html += '<button class="btn btn-secondary" onclick="startPreCache()" id="preCacheBtn" style="flex:1;font-size:0.8125rem;padding:0.5rem">🖼️ Pre-Cache Images</button>';
+    html += '<span id="preCacheStatus" style="font-size:0.75rem;color:#86868b"></span>';
+    html += '</div>';
+    html += '</div>';
+
+    // Token refresh
+    html += '<div style="margin-bottom:1rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem;font-size:0.875rem">Zoho Token</label>';
+    html += '<div id="tokenStatus" style="display:none"></div>';
+    html += '<div style="display:flex;gap:0.5rem;align-items:center">';
+    html += '<button class="btn btn-secondary" onclick="refreshZohoToken()" id="refreshTokenBtn" style="flex:1;font-size:0.8125rem;padding:0.5rem">🔑 Refresh Token</button>';
+    html += '<span id="refreshTokenStatus" style="font-size:0.75rem;color:#86868b"></span>';
+    html += '</div>';
+    html += '</div>';
+
+    // WorkDrive folder browser
     html += '<div>';
-    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Image Pre-Caching</label>';
-    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Pre-load all product images to speed up browsing. Only needs to run once after importing new data.</p>';
-    html += '<div style="display:flex;gap:1rem;align-items:center">';
-    html += '<button class="btn btn-secondary" onclick="startPreCache()" id="preCacheBtn" style="flex:1">🖼️ Pre-Cache Images</button>';
-    html += '<span id="preCacheStatus" style="font-size:0.8125rem;color:#86868b"></span>';
-    html += '</div>';
-    html += '</div>';
-    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
-    html += '<div>';
-    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">Zoho Image Token</label>';
-    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Product images are fetched from Zoho WorkDrive. If images fail to load, try refreshing the token.</p>';
-    html += '<div id="tokenStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
-    html += '<span id="tokenStatusText">Checking token...</span>';
-    html += '</div>';
-    html += '<div style="display:flex;gap:1rem;align-items:center">';
-    html += '<button class="btn btn-secondary" onclick="refreshZohoToken()" id="refreshTokenBtn" style="flex:1">🔄 Refresh Token</button>';
-    html += '<span id="refreshTokenStatus" style="font-size:0.8125rem;color:#86868b"></span>';
-    html += '</div>';
-    html += '</div>';
-    html += '<hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e5e5">';
-    // WorkDrive Folder Sync section
-    html += '<div>';
-    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem">📁 WorkDrive Folder Sync</label>';
-    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Auto-sync from daily CSV files dropped in WorkDrive. This preserves your cached images while updating order data.</p>';
-    html += '<div id="workdriveStatus" style="padding:0.75rem;background:#f5f5f7;border-radius:0.5rem;margin-bottom:0.75rem;font-size:0.8125rem">';
-    html += '<div id="workdriveStatusText">Checking WorkDrive status...</div>';
-    html += '</div>';
-    html += '<div id="workdriveFolderBrowser" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem;font-size:0.875rem">WorkDrive Folder</label>';
+    html += '<button class="btn btn-secondary" onclick="toggleFolderBrowser()" id="workdriveBrowseBtn" style="width:100%;font-size:0.8125rem;padding:0.5rem">📂 Browse Folders</button>';
+    html += '<div id="workdriveFolderBrowser" style="display:none;margin-top:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e5e5e5;border-radius:0.5rem">';
     html += '<div style="font-weight:600;font-size:0.8125rem;color:#1e3a5f;margin-bottom:0.5rem">📂 Enter Folder Details from URL</div>';
     html += '<div style="font-size:0.75rem;color:#86868b;margin-bottom:0.75rem">From your WorkDrive URL, copy the IDs:</div>';
     html += '<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">';
@@ -4032,30 +4085,10 @@ function getHTML() {
     html += '<div id="folderBreadcrumb" style="font-size:0.75rem;color:#86868b;margin-bottom:0.5rem"></div>';
     html += '<div id="folderList" style="max-height:100px;overflow-y:auto"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap">';
-    html += '<button class="btn btn-primary" onclick="syncFromWorkDrive()" id="workdriveSyncBtn" style="flex:1">🔄 Sync Sales Orders</button>';
-    html += '<button class="btn btn-secondary" onclick="toggleFolderBrowser()" id="workdriveBrowseBtn" style="flex:1">📂 Browse Folders</button>';
     html += '</div>';
-    html += '<div id="workdriveSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
-    html += '</div>';
-    // Import SO's & PO's Sync Section
-    html += '<div class="settings-card" style="margin-top:1rem">';
-    html += '<h3 style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">📦</span> Import SO\'s & PO\'s Sync</h3>';
-    html += '<div id="importPOStatus" style="font-size:0.8125rem;color:#86868b;margin-bottom:0.75rem">Checking status...</div>';
-    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem">';
-    html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync from WorkDrive</button>';
-    html += '</div>';
-    html += '<div id="importPOSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
-    html += '</div>';
-    // Trigger Export via Zoho Flow section
-    html += '<div class="settings-card" style="margin-top:1rem">';
-    html += '<h3 style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">🔄</span> Trigger Export via Zoho Flow</h3>';
-    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Trigger a new Zoho Analytics export. The file will be uploaded to WorkDrive and ready for import.</p>';
-    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem">';
-    html += '<button class="btn btn-primary" onclick="triggerZohoExport()" id="triggerExportBtn" style="flex:1;background:#34c759">📤 Trigger Export</button>';
-    html += '</div>';
-    html += '<div id="triggerExportResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
-    html += '</div>';
+
+    html += '</div>'; // end advancedSettings
+    html += '</div>'; // end advanced wrapper
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
 
@@ -6163,10 +6196,101 @@ function getHTML() {
     html += 'fetch("/api/settings").then(r => r.json()).then(function(settings) {';
     html += 'if (settings.defaultFiscalYear) select.value = settings.defaultFiscalYear;';
     html += '});';
-    html += 'checkTokenStatus();';
+    html += 'updateStatusBadges();';
     html += 'checkWorkDriveStatus();';
     html += 'checkImportPOStatus();';
     html += '}';
+
+    // Toggle advanced settings
+    html += 'function toggleAdvancedSettings() {';
+    html += 'var el = document.getElementById("advancedSettings");';
+    html += 'var arrow = document.getElementById("advancedArrow");';
+    html += 'if (el.style.display === "none") { el.style.display = "block"; arrow.textContent = "▼"; }';
+    html += 'else { el.style.display = "none"; arrow.textContent = "▶"; }';
+    html += '}';
+
+    // Status badges for the compact status section
+    html += 'async function updateStatusBadges() {';
+    html += 'try {';
+    html += 'var res = await fetch("/api/zoho/status");';
+    html += 'var data = await res.json();';
+    html += 'var tokenBadge = document.getElementById("tokenStatusBadge");';
+    html += 'var imagesBadge = document.getElementById("imagesCachedBadge");';
+    html += 'if (!data.configured) { tokenBadge.innerHTML = \'<span style="color:#f59e0b">⚠️ Not configured</span>\'; }';
+    html += 'else if (data.connected && !data.lastTokenError) { tokenBadge.innerHTML = \'<span style="color:#16a34a">✓ Active</span>\'; }';
+    html += 'else if (data.lastTokenError) { tokenBadge.innerHTML = \'<span style="color:#ef4444">✗ \' + data.lastTokenError + "</span>"; }';
+    html += 'else { tokenBadge.innerHTML = \'<span style="color:#f59e0b">Not initialized</span>\'; }';
+    html += 'if (data.cache) { imagesBadge.textContent = data.cache.cachedImages.toLocaleString(); }';
+    html += '} catch(e) { document.getElementById("tokenStatusBadge").innerHTML = \'<span style="color:#ef4444">Error</span>\'; }';
+    html += 'try {';
+    html += 'var res2 = await fetch("/api/workdrive/status");';
+    html += 'var wd = await res2.json();';
+    html += 'var wdBadge = document.getElementById("workdriveStatusBadge");';
+    html += 'var syncBadge = document.getElementById("lastSyncBadge");';
+    html += 'if (wd.configured) { wdBadge.innerHTML = \'<span style="color:#16a34a">✓ Connected</span>\'; }';
+    html += 'else { wdBadge.innerHTML = \'<span style="color:#f59e0b">⚠️ Not configured</span>\'; }';
+    html += 'if (wd.lastSync) { syncBadge.textContent = new Date(wd.lastSync).toLocaleString() + " (" + (wd.lastSyncRecords || 0) + " records)"; }';
+    html += 'else { syncBadge.innerHTML = \'<span style="color:#f59e0b">Never</span>\'; }';
+    html += '} catch(e) { document.getElementById("workdriveStatusBadge").innerHTML = \'<span style="color:#ef4444">Error</span>\'; }';
+    html += '}';
+
+    // Trigger Export & Sync - the main action button
+    html += 'async function triggerExportAndSync() {';
+    html += 'var btn = document.getElementById("triggerExportBtn");';
+    html += 'var result = document.getElementById("triggerExportResult");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Triggering export...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Step 1: Calling Zoho Flow to export data...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/trigger-export", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (!data.success) {';
+    html += 'result.innerHTML = \'<span style="color:#ef4444">Export failed: \' + (data.error || "Unknown error") + "</span>";';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync"; return;';
+    html += '}';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Step 2: Export triggered! Waiting for file to land in WorkDrive...</span>\';';
+    html += 'btn.textContent = "⏳ Waiting for file...";';
+    // Poll for the new file, then sync
+    html += 'var attempts = 0; var maxAttempts = 30;';
+    html += 'var pollInterval = setInterval(async function() {';
+    html += 'attempts++;';
+    html += 'if (attempts > maxAttempts) {';
+    html += 'clearInterval(pollInterval);';
+    html += 'result.innerHTML = \'<span style="color:#f59e0b">⚠️ Export triggered but file hasn\\\'t appeared yet. Try clicking Sync Sales Orders in a few minutes.</span>\';';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync"; return;';
+    html += '}';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Step 2: Waiting for file... (\' + (attempts * 10) + "s)</span>";';
+    html += '}, 10000);';
+    // Wait 30s then try syncing
+    html += 'setTimeout(async function() {';
+    html += 'clearInterval(pollInterval);';
+    html += 'btn.textContent = "⏳ Syncing...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Step 3: Importing data from WorkDrive...</span>\';';
+    html += 'try {';
+    html += 'var syncRes = await fetch("/api/workdrive/sync?force=true", { method: "POST" });';
+    html += 'var syncData = await syncRes.json();';
+    html += 'if (syncData.success && !syncData.skipped) {';
+    html += 'result.innerHTML = \'<span style="color:#16a34a">✓ Done! Imported \' + syncData.imported + " records from " + syncData.fileName + "</span>";';
+    html += 'updateStatusBadges();';
+    html += 'setTimeout(function() { location.reload(); }, 2000);';
+    html += '} else if (syncData.skipped) {';
+    html += 'result.innerHTML = \'<span style="color:#f59e0b">⚠️ \' + syncData.message + ". New file may still be processing — try again in a minute.</span>";';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync";';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#ef4444">Sync error: \' + syncData.error + "</span>";';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync";';
+    html += '}';
+    html += '} catch(se) {';
+    html += 'result.innerHTML = \'<span style="color:#ef4444">Sync failed: \' + se.message + "</span>";';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync";';
+    html += '}';
+    html += '}, 30000);';
+    html += '} catch(e) {';
+    html += 'result.innerHTML = \'<span style="color:#ef4444">Error: \' + e.message + "</span>";';
+    html += 'btn.disabled = false; btn.textContent = "📤 Trigger Export & Sync";';
+    html += '}';
+    html += '}';
+
     html += 'function closeSettingsModal() { document.getElementById("settingsModal").classList.remove("active"); document.getElementById("settingsStatus").textContent = ""; }';
     html += 'async function saveSettings() {';
     html += 'var fy = document.getElementById("defaultFYSelect").value;';
@@ -6228,6 +6352,7 @@ function getHTML() {
     // Zoho token status functions
     html += 'async function checkTokenStatus() {';
     html += 'var statusEl = document.getElementById("tokenStatusText");';
+    html += 'if (!statusEl) return;';
     html += 'try {';
     html += 'var res = await fetch("/api/zoho/status");';
     html += 'var data = await res.json();';
@@ -6328,6 +6453,7 @@ function getHTML() {
     // Import PO sync functions
     html += 'async function checkImportPOStatus() {';
     html += 'var statusEl = document.getElementById("importPOStatus");';
+    html += 'if (!statusEl) return;';
     html += 'try {';
     html += 'var res = await fetch("/api/workdrive/import-po/status");';
     html += 'var data = await res.json();';
@@ -6383,32 +6509,6 @@ function getHTML() {
     html += 'btn.textContent = "📦 Sync Import SOs & POs";';
     html += '}';
     html += 'checkImportPOStatus();';
-    html += '}';
-
-    // Trigger Export via Zoho Flow
-    html += 'async function triggerZohoExport() {';
-    html += 'var btn = document.getElementById("triggerExportBtn");';
-    html += 'var result = document.getElementById("triggerExportResult");';
-    html += 'btn.disabled = true;';
-    html += 'btn.textContent = "⏳ Triggering export...";';
-    html += 'result.innerHTML = \'<span style="color:#007aff">Calling Zoho Flow to export data...</span>\';';
-    html += 'try {';
-    html += 'var res = await fetch("/api/trigger-export", { method: "POST" });';
-    html += 'var data = await res.json();';
-    html += 'if (data.success) {';
-    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Export triggered! File will appear in WorkDrive shortly. Click Sync Sales Orders to import once ready.</span>\';';
-    html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📤 Trigger Export";';
-    html += '} else {';
-    html += 'result.innerHTML = \'<span style="color:#ff3b30">Failed: \' + (data.error || "Unknown error") + "</span>";';
-    html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📤 Trigger Export";';
-    html += '}';
-    html += '} catch(e) {';
-    html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>";';
-    html += 'btn.disabled = false;';
-    html += 'btn.textContent = "📤 Trigger Export";';
-    html += '}';
     html += '}';
 
     // WorkDrive folder browser
