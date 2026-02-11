@@ -3216,30 +3216,29 @@ app.get('/api/webhook/import-po', function(req, res) {
     });
 });
 
-// WEBHOOK ENDPOINT FOR SALES ORDERS WORKDRIVE SYNC
-// =================================================
-// This endpoint triggers a WorkDrive folder sync for Sales Orders data
-// Felix can configure Zoho Flow to POST to this URL when a new CSV is uploaded to WorkDrive
-app.post('/api/webhook/sync-sales-orders', async function(req, res) {
-    console.log('=== SALES ORDERS WEBHOOK RECEIVED ===');
+// =============================================================================
+// WEBHOOK: Trigger Sales Orders sync from WorkDrive
+// Felix can call this from Zoho Flow when a new CSV is dropped in WorkDrive
+// =============================================================================
+app.post('/api/webhook/sync-orders', async function(req, res) {
+    console.log('=== WEBHOOK: SYNC ORDERS TRIGGERED ===');
     console.log('Timestamp:', new Date().toISOString());
-    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('Source:', req.headers['user-agent'] || 'unknown');
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
 
     try {
-        // Trigger WorkDrive folder sync (force=true to always sync latest file)
-        var result = await syncFromWorkDriveFolder(true);
-        
-        console.log('=== SALES ORDERS WEBHOOK COMPLETE ===');
+        var result = await syncFromWorkDriveFolder(true); // force=true to always sync
+        console.log('=== WEBHOOK: SYNC ORDERS COMPLETE ===');
         console.log('Result:', JSON.stringify(result));
-
         res.json({
             success: true,
-            message: 'Sales Orders sync triggered via webhook',
-            sync_result: result
+            message: 'Sales orders sync triggered via webhook',
+            result: result
         });
-
     } catch (err) {
-        console.error('Sales Orders webhook error:', err);
+        console.error('Webhook sync-orders error:', err);
         res.status(500).json({
             success: false,
             error: err.message
@@ -3247,13 +3246,55 @@ app.post('/api/webhook/sync-sales-orders', async function(req, res) {
     }
 });
 
-// Simple GET endpoint to test sales orders webhook is reachable
-app.get('/api/webhook/sync-sales-orders', function(req, res) {
+// Test endpoint to verify webhook is reachable
+app.get('/api/webhook/sync-orders', function(req, res) {
     res.json({
         status: 'ready',
-        message: 'Sales Orders webhook endpoint is active. Send a POST request to trigger WorkDrive CSV sync.',
-        usage: 'Configure Zoho Flow to POST to this URL when a new CSV file is uploaded to the WorkDrive folder.',
-        workdrive_folder: process.env.WORKDRIVE_SYNC_FOLDER_ID || 'not configured'
+        message: 'Sales Orders webhook is active. Send a POST request to trigger a sync from WorkDrive.',
+        url: 'https://open-order-production.up.railway.app/api/webhook/sync-orders',
+        method: 'POST',
+        note: 'No body required. Just POST to this URL to trigger a sync.'
+    });
+});
+
+// =============================================================================
+// WEBHOOK: Trigger Import PO sync from WorkDrive
+// Felix can call this from Zoho Flow when a new Import PO CSV is dropped
+// =============================================================================
+app.post('/api/webhook/sync-import-po', async function(req, res) {
+    console.log('=== WEBHOOK: SYNC IMPORT PO TRIGGERED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Source:', req.headers['user-agent'] || 'unknown');
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
+
+    try {
+        var result = await syncImportPOFromWorkDrive(true); // force=true
+        console.log('=== WEBHOOK: SYNC IMPORT PO COMPLETE ===');
+        console.log('Result:', JSON.stringify(result));
+        res.json({
+            success: true,
+            message: 'Import PO sync triggered via webhook',
+            result: result
+        });
+    } catch (err) {
+        console.error('Webhook sync-import-po error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
+// Test endpoint to verify webhook is reachable
+app.get('/api/webhook/sync-import-po', function(req, res) {
+    res.json({
+        status: 'ready',
+        message: 'Import PO webhook is active. Send a POST request to trigger a sync from WorkDrive.',
+        url: 'https://open-order-production.up.railway.app/api/webhook/sync-import-po',
+        method: 'POST',
+        note: 'No body required. Just POST to this URL to trigger a sync.'
     });
 });
 
