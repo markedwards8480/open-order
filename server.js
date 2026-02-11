@@ -761,7 +761,7 @@ async function syncImportPOsFromWorkDrive(force) {
     var mapping = {
         po_number: findCol(['purchase_order_number', 'po_number', 'po', 'po#']),
         vendor_name: findCol(['vendor_name', 'vendor', 'supplier', 'factory']),
-        style_number: findCol(['style_number', 'style', 'sku', 'item_number', 'item']),
+        style_number: findCol(['style_name', 'style_suffix', 'style_number', 'style', 'sku', 'item_number', 'item']),
         style_name: findCol(['style_name', 'description', 'item_name', 'product_name']),
         commodity: findCol(['commodity', 'category', 'product_type', 'type']),
         color: findCol(['color', 'colour', 'variant']),
