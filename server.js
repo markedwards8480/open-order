@@ -3298,6 +3298,36 @@ app.get('/api/webhook/sync-import-po', function(req, res) {
     });
 });
 
+// =============================================================================
+// TRIGGER EXPORT: Call Zoho Flow to trigger Analytics export to WorkDrive
+// =============================================================================
+var ZOHO_FLOW_EXPORT_URL = process.env.ZOHO_FLOW_EXPORT_URL || '';
+
+app.post('/api/trigger-export', async function(req, res) {
+    console.log('=== TRIGGER EXPORT REQUESTED ===');
+    try {
+        if (!ZOHO_FLOW_EXPORT_URL) {
+            return res.json({ success: false, error: 'ZOHO_FLOW_EXPORT_URL not configured in environment variables' });
+        }
+        console.log('Calling Zoho Flow webhook:', ZOHO_FLOW_EXPORT_URL.substring(0, 60) + '...');
+        var response = await fetch(ZOHO_FLOW_EXPORT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'open-order-app', timestamp: new Date().toISOString() })
+        });
+        var responseText = await response.text();
+        console.log('Zoho Flow response:', response.status, responseText);
+        if (response.ok) {
+            res.json({ success: true, message: 'Export triggered via Zoho Flow', flowResponse: responseText });
+        } else {
+            res.json({ success: false, error: 'Zoho Flow returned ' + response.status + ': ' + responseText });
+        }
+    } catch (err) {
+        console.error('Trigger export error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // Debug endpoint to check date data
 app.get('/api/debug/dates', async function(req, res) {
     try {
@@ -4016,6 +4046,16 @@ function getHTML() {
     html += '<button class="btn btn-primary" onclick="syncImportPOs()" id="importPOSyncBtn" style="flex:1;background:#ff9500">📦 Sync from WorkDrive</button>';
     html += '</div>';
     html += '<div id="importPOSyncResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    html += '</div>';
+    // Trigger Export via Zoho Flow section
+    html += '<div class="settings-card" style="margin-top:1rem">';
+    html += '<h3 style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem"><span style="font-size:1.25rem">🔄</span> Trigger Export via Zoho Flow</h3>';
+    html += '<p style="color:#86868b;font-size:0.8125rem;margin-bottom:0.75rem">Trigger a new Zoho Analytics export. The file will be uploaded to WorkDrive and ready for import.</p>';
+    html += '<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem">';
+    html += '<button class="btn btn-primary" onclick="triggerZohoExport()" id="triggerExportBtn" style="flex:1;background:#34c759">📤 Trigger Export</button>';
+    html += '</div>';
+    html += '<div id="triggerExportResult" style="margin-top:0.75rem;font-size:0.8125rem;color:#86868b"></div>';
+    html += '</div>';
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
 
@@ -6343,6 +6383,32 @@ function getHTML() {
     html += 'btn.textContent = "📦 Sync Import SOs & POs";';
     html += '}';
     html += 'checkImportPOStatus();';
+    html += '}';
+
+    // Trigger Export via Zoho Flow
+    html += 'async function triggerZohoExport() {';
+    html += 'var btn = document.getElementById("triggerExportBtn");';
+    html += 'var result = document.getElementById("triggerExportResult");';
+    html += 'btn.disabled = true;';
+    html += 'btn.textContent = "⏳ Triggering export...";';
+    html += 'result.innerHTML = \'<span style="color:#007aff">Calling Zoho Flow to export data...</span>\';';
+    html += 'try {';
+    html += 'var res = await fetch("/api/trigger-export", { method: "POST" });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) {';
+    html += 'result.innerHTML = \'<span style="color:#34c759">✓ Export triggered! File will appear in WorkDrive shortly. Click Sync Sales Orders to import once ready.</span>\';';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📤 Trigger Export";';
+    html += '} else {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Failed: \' + (data.error || "Unknown error") + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📤 Trigger Export";';
+    html += '}';
+    html += '} catch(e) {';
+    html += 'result.innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + "</span>";';
+    html += 'btn.disabled = false;';
+    html += 'btn.textContent = "📤 Trigger Export";';
+    html += '}';
     html += '}';
 
     // WorkDrive folder browser
