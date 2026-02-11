@@ -746,7 +746,7 @@ async function syncImportPOsFromWorkDrive(force) {
         return { success: false, error: 'CSV file is empty or has no data rows' };
     }
 
-    var headers = rows[0].split(',').map(function(h) { return h.trim().toLowerCase().replace(/['"]/g, ''); });
+    var headers = rows[0].split(',').map(function(h) { return h.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'); });
     console.log('Import PO CSV headers:', headers);
 
     // Map column names (flexible naming)
