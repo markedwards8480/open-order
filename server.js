@@ -3216,6 +3216,47 @@ app.get('/api/webhook/import-po', function(req, res) {
     });
 });
 
+// WEBHOOK ENDPOINT FOR SALES ORDERS WORKDRIVE SYNC
+// =================================================
+// This endpoint triggers a WorkDrive folder sync for Sales Orders data
+// Felix can configure Zoho Flow to POST to this URL when a new CSV is uploaded to WorkDrive
+app.post('/api/webhook/sync-sales-orders', async function(req, res) {
+    console.log('=== SALES ORDERS WEBHOOK RECEIVED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
+    try {
+        // Trigger WorkDrive folder sync (force=true to always sync latest file)
+        var result = await syncFromWorkDriveFolder(true);
+        
+        console.log('=== SALES ORDERS WEBHOOK COMPLETE ===');
+        console.log('Result:', JSON.stringify(result));
+
+        res.json({
+            success: true,
+            message: 'Sales Orders sync triggered via webhook',
+            sync_result: result
+        });
+
+    } catch (err) {
+        console.error('Sales Orders webhook error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
+// Simple GET endpoint to test sales orders webhook is reachable
+app.get('/api/webhook/sync-sales-orders', function(req, res) {
+    res.json({
+        status: 'ready',
+        message: 'Sales Orders webhook endpoint is active. Send a POST request to trigger WorkDrive CSV sync.',
+        usage: 'Configure Zoho Flow to POST to this URL when a new CSV file is uploaded to the WorkDrive folder.',
+        workdrive_folder: process.env.WORKDRIVE_SYNC_FOLDER_ID || 'not configured'
+    });
+});
+
 // Debug endpoint to check date data
 app.get('/api/debug/dates', async function(req, res) {
     try {
