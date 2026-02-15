@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { Pool } = require('pg');
 const multer = require('multer');
@@ -4601,7 +4602,7 @@ function getHTML() {
     html += 'if (!item.pos) return;';
     html += 'item.pos.forEach(function(po) {';
     html += 'if (!po.po_unit_price && po.po_unit_price !== 0) return;';
-    html += 'var key = mode === "base" ? (item.style_number || "").split("-")[0] : item.style_number;';
+    html += 'var key = mode === "base" ? (item.style_number || "").split("-")[0] : (item.style_name || item.style_number);';
     html += 'if (!key) return;';
     html += 'if (!groups[key]) groups[key] = { style: key, commodity: item.commodity || "-", entries: [], prices: new Set(), vendors: new Set(), totalQty: 0, totalDollars: 0, image: item.image_url, hasActionable: false, actionableQty: 0, actionableDollars: 0 };';
     html += 'var price = parseFloat(po.po_unit_price) || 0;';
