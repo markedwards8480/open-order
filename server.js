@@ -15,6 +15,17 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// --- Origin Protection ---
+const ORIGIN_SECRET = process.env.ORIGIN_SECRET;
+if (ORIGIN_SECRET) {
+      app.use((req, res, next) => {
+              if (req.headers['x-origin-secret'] === ORIGIN_SECRET) {
+                        return next();
+              }
+              res.status(403).json({ error: 'Direct access not allowed' });
+      });
+}
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
