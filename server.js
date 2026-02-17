@@ -1279,6 +1279,17 @@ app.get('/api/orders', async function(req, res) {
             conditions.push('style_number = $' + paramIndex++);
             params.push(style);
         }
+        // Department filter - department is the last letter of the base style (before the dash suffix)
+        var departments = req.query.departments;
+        if (departments) {
+            var deptList = departments.split(',').map(d => d.trim()).filter(d => d);
+            if (deptList.length > 0) {
+                var deptConditions = deptList.map(function(d) {
+                    return "style_number ~ '^[0-9]+(" + d + ")[-]'";
+                });
+                conditions.push('(' + deptConditions.join(' OR ') + ')');
+            }
+        }
         // Style search (partial match)
         var styleSearch = req.query.styleSearch;
         if (styleSearch) {
@@ -1796,6 +1807,18 @@ app.get('/api/po/orders', async function(req, res) {
         if (req.query.styleSearch) {
             conditions.push('style_number ILIKE $' + paramIndex++);
             params.push('%' + req.query.styleSearch + '%');
+        }
+
+        // Department filter
+        var departments = req.query.departments;
+        if (departments) {
+            var deptList = departments.split(',').map(d => d.trim()).filter(d => d);
+            if (deptList.length > 0) {
+                var deptConditions = deptList.map(function(d) {
+                    return "style_number ~ '^[0-9]+(" + d + ")[-]'";
+                });
+                conditions.push('(' + deptConditions.join(' OR ') + ')');
+            }
         }
 
         var whereClause = 'WHERE ' + conditions.join(' AND ');
@@ -4063,6 +4086,7 @@ function getHTML() {
     html += '<div class="filter-group"><label class="filter-label">Customer</label><div class="multi-select" id="customerMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'customer\')"><span id="customerDisplay">All Customers</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="customerDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Delivery</label><div class="multi-select" id="monthMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'month\')"><span id="monthDisplay">All Months</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="monthDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Commodity</label><div class="multi-select" id="commodityMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'commodity\')"><span id="commodityDisplay">All Commodities</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="commodityDropdown"></div></div></div>';
+    html += '<div class="filter-group"><label class="filter-label">Department</label><div class="multi-select" id="departmentMultiSelect"><div class="multi-select-display" onclick="toggleMultiSelect(\'department\')"><span id="departmentDisplay">All Departments</span><span class="multi-select-arrow">▼</span></div><div class="multi-select-dropdown" id="departmentDropdown"></div></div></div>';
     html += '<div class="filter-group"><label class="filter-label">Style Search</label><div style="position:relative"><input type="text" id="styleSearchInput" placeholder="Search styles..." style="padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.8125rem;width:140px" onkeyup="handleStyleSearch(event)"><button onclick="clearStyleSearch()" id="styleSearchClear" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#86868b;display:none;font-size:1rem">×</button></div></div>';
     html += '<div class="status-toggle"><button class="status-btn active" data-status="Open">Open</button><button class="status-btn" data-status="Invoiced">Invoiced</button><button class="status-btn" data-status="All">All</button></div>';
     html += '<button class="clear-filters" onclick="clearFilters()" style="display:none" id="clearFiltersBtn">Clear Filters</button>';
@@ -4217,7 +4241,7 @@ function getHTML() {
     html += '<script>';
 
     // State
-    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity", styleSearch: "", poTilesLimit: 200 };';
+    html += 'var state = { mode: "sales", filters: { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], departments: [], status: "Open", poStatus: "Open" }, view: "dashboard", sortBy: "value", data: null, summaryGroupBy: "commodity", expandedRows: {}, groupByCustomer: false, groupByVendor: false, stackByStyle: false, expandedStacks: {}, treemapView: "commodity", styleSearch: "", poTilesLimit: 200 };';
 
     // Store all months for filtering
     html += 'var allMonths = [];';
@@ -4242,6 +4266,14 @@ function getHTML() {
     html += 'populateMultiSelect("month", allMonths.map(function(m) { return { value: m.month, label: m.display_name }; }), "All Months");';
     // Commodity multi-select
     html += 'populateMultiSelect("commodity", data.commodities.map(function(c) { return { value: c.commodity, label: c.commodity + " (" + c.style_count + ")" }; }), "All Commodities");';
+    html += 'var deptMap = { J:"J - Juniors", Y:"Y - Ext Juniors", P:"P - Big Kids", W:"W - Missy (Senior Women)", M:"M - Maternity", S:"S - Missy (Petite)", K:"K - Ext Kids", L:"L - Little Kids", Z:"Z - Missy (Plus Size)", C:"C - Boys & Unisex Kids", B:"B - Baby 0-3", I:"I - Infants (12M-24M)", T:"T - Toddlers", U:"U - Men" };';
+    html += 'var deptCounts = {};';
+    html += 'if (data.items) { data.items.forEach(function(item) {';
+    html += 'var match = item.style_number ? item.style_number.match(/^\\d+([A-Z])-/) : null;';
+    html += 'if (match) { var d = match[1]; deptCounts[d] = (deptCounts[d] || 0) + 1; }';
+    html += '}); }';
+    html += 'var deptOptions = Object.keys(deptMap).filter(function(d) { return deptCounts[d]; }).map(function(d) { return { value: d, label: deptMap[d] + " (" + deptCounts[d] + ")" }; });';
+    html += 'populateMultiSelect("department", deptOptions, "All Departments");';
     html += '} catch(e) { console.error("Error loading filters:", e); }}';
 
     // Filter months based on selected FY/Year
@@ -4287,6 +4319,7 @@ function getHTML() {
     // PO mode - pass vendor filter (stored in state.filters.customers when in PO mode)
     html += 'if (state.filters.customers.length > 0) params.append("vendors", state.filters.customers.join("||"));';
     html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
+    html += 'if (state.filters.departments.length > 0) params.append("departments", state.filters.departments.join(","));';
     html += 'if (state.filters.months.length > 0) params.append("months", state.filters.months.join(","));';
     html += 'params.append("status", state.filters.poStatus || "Open");';
     html += 'var res = await fetch("/api/po/orders?" + params.toString());';
@@ -4301,6 +4334,7 @@ function getHTML() {
     html += 'if (state.filters.customers.length > 0) params.append("customers", state.filters.customers.join("||"));';
     html += 'if (state.filters.months.length > 0) params.append("months", state.filters.months.join(","));';
     html += 'if (state.filters.commodities.length > 0) params.append("commodities", state.filters.commodities.join(","));';
+    html += 'if (state.filters.departments.length > 0) params.append("departments", state.filters.departments.join(","));';
     html += 'if (state.filters.status) params.append("status", state.filters.status);';
     html += 'var url = state.view === "orders" ? "/api/orders/by-so?" : "/api/orders?";';
     html += 'var controller = new AbortController();';
@@ -6122,7 +6156,7 @@ function getHTML() {
     html += 'function updateMultiFilter(type, defaultLabel) {';
     html += 'var checkboxes = document.querySelectorAll("#" + type + "Options input[type=checkbox]:checked");';
     html += 'var values = Array.from(checkboxes).map(function(cb) { return cb.value; });';
-    html += 'var filterKey = type === "fy" ? "fiscalYears" : type === "year" ? "years" : type === "month" ? "months" : type === "commodity" ? "commodities" : type + "s";';
+    html += 'var filterKey = type === "fy" ? "fiscalYears" : type === "year" ? "years" : type === "month" ? "months" : type === "commodity" ? "commodities" : type === "department" ? "departments" : type + "s";';
     html += 'state.filters[filterKey] = values;';
     html += 'var display = document.getElementById(type + "Display");';
     html += 'var displayEl = document.querySelector("#" + type + "MultiSelect .multi-select-display");';
@@ -6136,12 +6170,12 @@ function getHTML() {
 
     html += 'function selectAllFilter(type) {';
     html += 'document.querySelectorAll("#" + type + "Options input[type=checkbox]").forEach(function(cb) { if (!cb.closest(".multi-select-option").classList.contains("hidden")) cb.checked = true; });';
-    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
+    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : type === "department" ? "All Departments" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
     html += 'updateMultiFilter(type, defaultLabel); }';
 
     html += 'function clearAllFilter(type) {';
     html += 'document.querySelectorAll("#" + type + "Options input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
-    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
+    html += 'var defaultLabel = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : type === "department" ? "All Departments" : "All " + type.charAt(0).toUpperCase() + type.slice(1) + "s";';
     html += 'updateMultiFilter(type, defaultLabel); }';
 
     // Keep old customer functions for backward compatibility
@@ -6880,23 +6914,23 @@ function getHTML() {
 
     // Clear filters
     html += 'function clearFilters() {';
-    html += 'state.filters = { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], status: state.filters.status, poStatus: state.filters.poStatus };';
+    html += 'state.filters = { years: [], fiscalYears: [], customers: [], vendors: [], months: [], commodities: [], departments: [], status: state.filters.status, poStatus: state.filters.poStatus };';
     html += 'state.styleSearch = "";';
     html += 'state.poTilesLimit = 200;'; // Reset tile limit when clearing filters
     html += 'document.getElementById("styleSearchInput").value = "";';
     html += 'document.getElementById("styleSearchClear").style.display = "none";';
     // Clear all multi-select checkboxes and reset displays
-    html += '["year", "fy", "customer", "month", "commodity"].forEach(function(type) {';
+    html += '["year", "fy", "customer", "month", "commodity", "department"].forEach(function(type) {';
     html += 'document.querySelectorAll("#" + type + "Dropdown input[type=checkbox]").forEach(function(cb) { cb.checked = false; });';
     html += 'var display = document.getElementById(type + "Display");';
     html += 'var displayEl = document.querySelector("#" + type + "MultiSelect .multi-select-display");';
-    html += 'if (display) display.textContent = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : "All Customers";';
+    html += 'if (display) display.textContent = type === "fy" ? "All FY" : type === "year" ? "All Years" : type === "month" ? "All Months" : type === "commodity" ? "All Commodities" : type === "department" ? "All Departments" : "All Customers";';
     html += 'if (displayEl) displayEl.classList.remove("active");';
     html += '});';
     // Reset months dropdown to show all months
     html += 'filterMonthsDropdown();';
     html += 'updateClearButton(); loadData(); }';
-    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0 || state.styleSearch;';
+    html += 'function updateClearButton() { var hasFilters = state.filters.customers.length > 0 || state.filters.months.length > 0 || state.filters.commodities.length > 0 || state.filters.departments.length > 0 || state.filters.years.length > 0 || state.filters.fiscalYears.length > 0 || state.styleSearch;';
     html += 'document.getElementById("clearFiltersBtn").style.display = hasFilters ? "block" : "none"; }';
 
     // Chat
