@@ -2090,7 +2090,7 @@ app.get('/api/zoho/callback', async function(req, res) {
 app.get('/api/zoho/connect', function(req, res) {
     var clientId = process.env.ZOHO_CLIENT_ID;
     var redirectUri = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho/callback';
-    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL,ZohoInventory.salesorders.READ,ZohoInventory.purchaseorders.READ,ZohoInventory.invoices.READ';
+    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL,ZohoBooks.salesorders.READ,ZohoBooks.purchaseorders.READ,ZohoBooks.invoices.READ';
     var authUrl = 'https://accounts.zoho.com/oauth/v2/auth?scope=' + scope + '&client_id=' + clientId + '&response_type=code&access_type=offline&redirect_uri=' + encodeURIComponent(redirectUri) + '&prompt=consent';
     res.redirect(authUrl);
 });
@@ -2122,7 +2122,7 @@ app.get('/api/zoho-link/:type/:docNumber', async function(req, res) {
             return res.json({ success: false, error: 'Invalid type' });
         }
         
-        var searchUrl = 'https://www.zohoapis.com/inventory/v1/' + apiPath + '?organization_id=' + orgId + '&search_text=' + encodeURIComponent(docNumber);
+        var searchUrl = 'https://www.zohoapis.com/books/v3/' + apiPath + '?organization_id=' + orgId + '&search_text=' + encodeURIComponent(docNumber);
         var response = await fetch(searchUrl, {
             headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
         });
