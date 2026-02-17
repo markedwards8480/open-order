@@ -1703,9 +1703,20 @@ app.get('/api/filters', async function(req, res) {
             }
         }
 
+        // Department counts - extract letter before dash from style_number
+        var departmentsResult = await pool.query(`
+            SELECT SUBSTRING(style_number FROM '^[0-9]+([A-Z])') as dept_code,
+                   COUNT(DISTINCT SUBSTRING(style_number FROM '^[0-9]+[A-Z]')) as style_count
+            FROM order_items
+            WHERE status = 'Open' AND style_number ~ '^[0-9]+[A-Z]-'
+            GROUP BY dept_code
+            ORDER BY style_count DESC
+        `);
+
         res.json({
             customers: customersResult.rows,
             commodities: commoditiesResult.rows,
+            departments: departmentsResult.rows,
             months: monthsResult.rows,
             years: yearsResult.rows.map(r => r.year),
             fiscalYears: filteredFiscalYears,
@@ -4267,12 +4278,7 @@ function getHTML() {
     // Commodity multi-select
     html += 'populateMultiSelect("commodity", data.commodities.map(function(c) { return { value: c.commodity, label: c.commodity + " (" + c.style_count + ")" }; }), "All Commodities");';
     html += 'var deptMap = { J:"J - Juniors", Y:"Y - Ext Juniors", P:"P - Big Kids", W:"W - Missy (Senior Women)", M:"M - Maternity", S:"S - Missy (Petite)", K:"K - Ext Kids", L:"L - Little Kids", Z:"Z - Missy (Plus Size)", C:"C - Boys & Unisex Kids", B:"B - Baby 0-3", I:"I - Infants (12M-24M)", T:"T - Toddlers", U:"U - Men" };';
-    html += 'var deptCounts = {};';
-    html += 'if (data.items) { data.items.forEach(function(item) {';
-    html += 'var match = item.style_number ? item.style_number.match(/^\\d+([A-Z])-/) : null;';
-    html += 'if (match) { var d = match[1]; deptCounts[d] = (deptCounts[d] || 0) + 1; }';
-    html += '}); }';
-    html += 'var deptOptions = Object.keys(deptMap).filter(function(d) { return deptCounts[d]; }).map(function(d) { return { value: d, label: deptMap[d] + " (" + deptCounts[d] + ")" }; });';
+    html += 'var deptOptions = (data.departments || []).filter(function(d) { return d.dept_code && deptMap[d.dept_code]; }).map(function(d) { return { value: d.dept_code, label: deptMap[d.dept_code] + " (" + d.style_count + ")" }; });';
     html += 'populateMultiSelect("department", deptOptions, "All Departments");';
     html += '} catch(e) { console.error("Error loading filters:", e); }}';
 
