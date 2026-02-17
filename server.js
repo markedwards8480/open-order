@@ -3997,7 +3997,7 @@ function getHTML() {
     html += '<div class="stat-box"><div class="stat-value" id="statCustomers">-</div><div class="stat-label">Customers</div></div>';
     html += '<div class="stat-box"><div class="stat-value" id="statStyles">-</div><div class="stat-label">Styles</div></div>';
     html += '<div class="stat-box"><div class="stat-value" id="statUnits">-</div><div class="stat-label">Units</div></div>';
-    html += '<div class="stat-box highlight" id="statDollarsBox" style="display:none"><div class="stat-value money" id="statDollars">-</div><div class="stat-label">Total Value</div></div>';
+    html += '<div class="stat-box highlight" id="statDollarsBox" style="display:none;position:relative"><div class="stat-value money" id="statDollars">-</div><div class="stat-label">Total Value</div><button onclick="relockTotalValue()" title="Hide total value" style="position:absolute;top:6px;right:8px;background:none;border:none;cursor:pointer;font-size:0.75rem;opacity:0.4;padding:2px" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">🔒</button></div>';
     html += '<div class="stat-box" id="statDollarsLock" style="cursor:pointer;opacity:0.5" onclick="showPinModal()" title="Unlock to view total value"><div class="stat-value" style="font-size:1.5rem">🔒</div><div class="stat-label">Total Value</div></div>';
     html += '</div>';
 
@@ -6381,6 +6381,7 @@ function getHTML() {
     html += '}';
     html += 'function showTotalValue() { document.getElementById("statDollarsBox").style.display = ""; document.getElementById("statDollarsLock").style.display = "none"; }';
     html += 'function hideTotalValue() { document.getElementById("statDollarsBox").style.display = "none"; document.getElementById("statDollarsLock").style.display = ""; }';
+    html += 'function relockTotalValue() { localStorage.removeItem("mgmtPinUnlocked"); hideTotalValue(); }';
     html += 'async function checkPinOnLoad() {';
     html += 'try {';
     html += 'var res = await fetch("/api/pin-status");';
