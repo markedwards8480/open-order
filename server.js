@@ -2013,6 +2013,33 @@ app.post('/api/settings', async function(req, res) {
     }
 });
 
+// Verify management PIN
+app.post('/api/verify-pin', async function(req, res) {
+    try {
+        var pin = req.body.pin;
+        if (!pin) return res.status(400).json({ error: 'PIN required' });
+        var result = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'managementPin'");
+        if (result.rows.length === 0 || !result.rows[0].setting_value) {
+            // No PIN set = show to everyone
+            return res.json({ valid: true });
+        }
+        res.json({ valid: pin === result.rows[0].setting_value });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Check if management PIN is configured
+app.get('/api/pin-status', async function(req, res) {
+    try {
+        var result = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'managementPin'");
+        var hasPin = result.rows.length > 0 && result.rows[0].setting_value && result.rows[0].setting_value.length > 0;
+        res.json({ hasPin: hasPin });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ============================================
 // ZOHO ANALYTICS SYNC ENDPOINTS
 // ============================================
@@ -3970,7 +3997,8 @@ function getHTML() {
     html += '<div class="stat-box"><div class="stat-value" id="statCustomers">-</div><div class="stat-label">Customers</div></div>';
     html += '<div class="stat-box"><div class="stat-value" id="statStyles">-</div><div class="stat-label">Styles</div></div>';
     html += '<div class="stat-box"><div class="stat-value" id="statUnits">-</div><div class="stat-label">Units</div></div>';
-    html += '<div class="stat-box highlight"><div class="stat-value money" id="statDollars">-</div><div class="stat-label">Total Value</div></div>';
+    html += '<div class="stat-box highlight" id="statDollarsBox" style="display:none"><div class="stat-value money" id="statDollars">-</div><div class="stat-label">Total Value</div></div>';
+    html += '<div class="stat-box" id="statDollarsLock" style="cursor:pointer;opacity:0.5" onclick="showPinModal()" title="Unlock to view total value"><div class="stat-value" style="font-size:1.5rem">🔒</div><div class="stat-label">Total Value</div></div>';
     html += '</div>';
 
     // Filters bar
@@ -4100,11 +4128,31 @@ function getHTML() {
     html += '</div>';
 
     html += '</div>'; // end advancedSettings
+
+    // Management PIN section (inside advanced wrapper but after collapsible)
+    html += '<div style="margin-top:1rem;border-top:1px solid #e5e5e5;padding-top:1rem">';
+    html += '<label style="font-weight:600;color:#1e3a5f;display:block;margin-bottom:0.5rem;font-size:0.875rem">🔒 Management PIN</label>';
+    html += '<p style="color:#86868b;font-size:0.75rem;margin-bottom:0.5rem">Set a PIN to control who can see Total Value. Leave blank to show to everyone.</p>';
+    html += '<div style="display:flex;gap:0.5rem">';
+    html += '<input type="password" id="mgmtPinInput" placeholder="Set PIN (e.g. 1234)" maxlength="10" style="flex:1;padding:0.5rem;font-size:0.8125rem;border:1px solid #e5e5e5;border-radius:4px">';
+    html += '<button class="btn btn-secondary" onclick="saveMgmtPin()" style="font-size:0.8125rem;padding:0.5rem 1rem">Save PIN</button>';
+    html += '</div>';
+    html += '<div id="mgmtPinStatus" style="font-size:0.75rem;margin-top:0.25rem;min-height:1rem"></div>';
+    html += '<button onclick="clearMgmtPin()" style="background:none;border:none;cursor:pointer;font-size:0.75rem;color:#ff3b30;margin-top:0.25rem;padding:0">Remove PIN (show value to everyone)</button>';
+    html += '</div>';
     html += '</div>'; // end advanced wrapper
     html += '<div id="settingsStatus" style="margin-top:1rem;text-align:center;font-size:0.875rem"></div>';
     html += '</div></div>';
 
-    // Chat bubble
+    // PIN unlock modal
+    html += '<div class="modal" id="pinModal"><div class="modal-content" style="max-width:340px;padding:2rem;text-align:center">';
+    html += '<button class="modal-close" onclick="closePinModal()">&times;</button>';
+    html += '<h2 style="margin-bottom:0.5rem">🔒 Enter PIN</h2>';
+    html += '<p style="color:#86868b;font-size:0.875rem;margin-bottom:1.25rem">Enter the management PIN to view total values.</p>';
+    html += '<input type="password" id="pinInput" maxlength="10" placeholder="Enter PIN" style="width:100%;padding:0.75rem;font-size:1.25rem;text-align:center;border:1px solid #d1d5db;border-radius:8px;letter-spacing:0.25rem" onkeyup="if(event.key===\'Enter\')verifyPin()">';
+    html += '<div id="pinError" style="color:#ff3b30;font-size:0.8125rem;margin-top:0.5rem;min-height:1.25rem"></div>';
+    html += '<button class="btn btn-primary" onclick="verifyPin()" style="width:100%;margin-top:0.75rem;padding:0.75rem">Unlock</button>';
+    html += '</div></div>';
     html += '<div class="chat-bubble" onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg><span class="chat-bubble-label">Ask AI</span></div>';
 
     // Chat panel
@@ -6318,6 +6366,47 @@ function getHTML() {
     html += '} catch(e) { console.error("Save error:", e); document.getElementById("settingsStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
     html += '}';
 
+    // Management PIN functions
+    html += 'function showPinModal() { document.getElementById("pinModal").classList.add("active"); document.getElementById("pinInput").value = ""; document.getElementById("pinError").textContent = ""; setTimeout(function() { document.getElementById("pinInput").focus(); }, 100); }';
+    html += 'function closePinModal() { document.getElementById("pinModal").classList.remove("active"); }';
+    html += 'async function verifyPin() {';
+    html += 'var pin = document.getElementById("pinInput").value;';
+    html += 'if (!pin) { document.getElementById("pinError").textContent = "Please enter a PIN"; return; }';
+    html += 'try {';
+    html += 'var res = await fetch("/api/verify-pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: pin }) });';
+    html += 'var data = await res.json();';
+    html += 'if (data.valid) { localStorage.setItem("mgmtPinUnlocked", "true"); showTotalValue(); closePinModal(); }';
+    html += 'else { document.getElementById("pinError").textContent = "Incorrect PIN"; document.getElementById("pinInput").value = ""; }';
+    html += '} catch(e) { document.getElementById("pinError").textContent = "Error: " + e.message; }';
+    html += '}';
+    html += 'function showTotalValue() { document.getElementById("statDollarsBox").style.display = ""; document.getElementById("statDollarsLock").style.display = "none"; }';
+    html += 'function hideTotalValue() { document.getElementById("statDollarsBox").style.display = "none"; document.getElementById("statDollarsLock").style.display = ""; }';
+    html += 'async function checkPinOnLoad() {';
+    html += 'try {';
+    html += 'var res = await fetch("/api/pin-status");';
+    html += 'var data = await res.json();';
+    html += 'if (!data.hasPin) { showTotalValue(); return; }';
+    html += 'if (localStorage.getItem("mgmtPinUnlocked") === "true") { showTotalValue(); }';
+    html += 'else { hideTotalValue(); }';
+    html += '} catch(e) { console.error("PIN check error:", e); hideTotalValue(); }';
+    html += '}';
+    html += 'async function saveMgmtPin() {';
+    html += 'var pin = document.getElementById("mgmtPinInput").value;';
+    html += 'if (!pin) { document.getElementById("mgmtPinStatus").innerHTML = \'<span style="color:#ff3b30">Enter a PIN first</span>\'; return; }';
+    html += 'try {';
+    html += 'var res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "managementPin", value: pin }) });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) { document.getElementById("mgmtPinStatus").innerHTML = \'<span style="color:#34c759">✓ PIN saved!</span>\'; document.getElementById("mgmtPinInput").value = ""; localStorage.setItem("mgmtPinUnlocked", "true"); }';
+    html += '} catch(e) { document.getElementById("mgmtPinStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += '}';
+    html += 'async function clearMgmtPin() {';
+    html += 'try {';
+    html += 'var res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "managementPin", value: "" }) });';
+    html += 'var data = await res.json();';
+    html += 'if (data.success) { document.getElementById("mgmtPinStatus").innerHTML = \'<span style="color:#34c759">✓ PIN removed. Total value visible to all.</span>\'; showTotalValue(); }';
+    html += '} catch(e) { document.getElementById("mgmtPinStatus").innerHTML = \'<span style="color:#ff3b30">Error: \' + e.message + \'</span>\'; }';
+    html += '}';
+
     // Pre-cache functions
     html += 'var preCacheInterval = null;';
     html += 'async function startPreCache() {';
@@ -6844,7 +6933,7 @@ function getHTML() {
     html += 'try { var settings = await fetch("/api/settings").then(r => r.json());';
     html += 'if (settings.defaultFiscalYear) { state.filters.fiscalYear = settings.defaultFiscalYear; }';
     html += '} catch(e) { console.log("No settings found, using defaults"); }';
-    html += 'await loadFilters(); loadData();';
+    html += 'await loadFilters(); loadData(); checkPinOnLoad();';
     html += '})();';
 
     html += '</script></body></html>';
