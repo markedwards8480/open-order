@@ -2090,9 +2090,64 @@ app.get('/api/zoho/callback', async function(req, res) {
 app.get('/api/zoho/connect', function(req, res) {
     var clientId = process.env.ZOHO_CLIENT_ID;
     var redirectUri = (process.env.APP_URL || 'https://open-order-production.up.railway.app') + '/api/zoho/callback';
-    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL';
+    var scope = 'ZohoAnalytics.data.read,ZohoAnalytics.metadata.read,WorkDrive.files.ALL,WorkDrive.team.ALL,WorkDrive.teamfolders.ALL,ZohoInventory.salesorders.READ,ZohoInventory.purchaseorders.READ,ZohoInventory.invoices.READ';
     var authUrl = 'https://accounts.zoho.com/oauth/v2/auth?scope=' + scope + '&client_id=' + clientId + '&response_type=code&access_type=offline&redirect_uri=' + encodeURIComponent(redirectUri) + '&prompt=consent';
     res.redirect(authUrl);
+});
+
+// Zoho document deep link - looks up document by number and redirects to Zoho Inventory
+app.get('/api/zoho-link/:type/:docNumber', async function(req, res) {
+    try {
+        var type = req.params.type;
+        var docNumber = req.params.docNumber;
+        var orgId = process.env.ZOHO_BOOKS_ORG_ID || '677681121';
+        
+        if (!zohoAccessToken) await refreshZohoToken();
+        if (!zohoAccessToken) return res.json({ success: false, error: 'No Zoho token' });
+        
+        var apiPath, idField, numberField;
+        if (type === 'purchaseorder') {
+            apiPath = 'purchaseorders';
+            idField = 'purchaseorder_id';
+            numberField = 'purchaseorder_number';
+        } else if (type === 'salesorder') {
+            apiPath = 'salesorders';
+            idField = 'salesorder_id';
+            numberField = 'salesorder_number';
+        } else if (type === 'invoice') {
+            apiPath = 'invoices';
+            idField = 'invoice_id';
+            numberField = 'invoice_number';
+        } else {
+            return res.json({ success: false, error: 'Invalid type' });
+        }
+        
+        var searchUrl = 'https://www.zohoapis.com/inventory/v1/' + apiPath + '?organization_id=' + orgId + '&search_text=' + encodeURIComponent(docNumber);
+        var response = await fetch(searchUrl, {
+            headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+        });
+        
+        if (response.status === 401) {
+            await refreshZohoToken();
+            response = await fetch(searchUrl, {
+                headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+            });
+        }
+        
+        var data = await response.json();
+        var docs = data[apiPath] || [];
+        var match = docs.find(function(d) { return d[numberField] === docNumber; });
+        
+        if (match) {
+            var zohoUrl = 'https://inventory.zoho.com/app/' + orgId + '#/' + apiPath + '/' + match[idField];
+            return res.json({ success: true, url: zohoUrl });
+        }
+        
+        return res.json({ success: false, url: 'https://inventory.zoho.com/app/' + orgId + '#/' + apiPath, error: 'Document not found' });
+    } catch (err) {
+        console.error('Zoho link error:', err.message);
+        res.json({ success: false, error: err.message, url: 'https://inventory.zoho.com/app/677681121#/' + (req.params.type === 'purchaseorder' ? 'purchaseorders' : req.params.type === 'salesorder' ? 'salesorders' : 'invoices') });
+    }
 });
 
 // Test Zoho Analytics connection
@@ -4607,7 +4662,7 @@ function getHTML() {
     html += 'poNums.forEach(function(poNum) {';
     html += 'var po = vg.pos[poNum];';
     html += 'var eta = po.warehouseDate ? new Date(po.warehouseDate).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
-    html += 'out += \'<div style="padding:0.75rem 1rem;background:#f8fafc;border-top:1px solid #eee"><strong>PO# \' + poNum + \'</strong> <span style="color:#86868b;margin-left:1rem">ETA: \' + eta + \' · \' + po.items.length + \' styles · $\' + formatNumber(Math.round(po.totalDollars)) + \'</span></div>\';';
+    html += 'out += \'<div style="padding:0.75rem 1rem;background:#f8fafc;border-top:1px solid #eee"><strong><a href="#" class="zoho-doc-link" data-type="purchaseorder" data-num="\' + escapeHtml(poNum) + \'" style="text-decoration:underline;color:inherit;cursor:pointer" title="Open in Zoho Inventory">PO# \' + poNum + \'</a></strong> <span style="color:#86868b;margin-left:1rem">ETA: \' + eta + \' · \' + po.items.length + \' styles · $\' + formatNumber(Math.round(po.totalDollars)) + \'</span></div>\';';
     html += '}); out += \'</div>\'; });';
     html += 'out += \'</div>\'; container.innerHTML = out; }';
 
@@ -4807,7 +4862,7 @@ function getHTML() {
     html += 'out += \'<td style="padding:0.5rem 1rem 0.5rem 2rem;font-size:0.8125rem">\';';
     // Show actionable badge
     html += 'if (e.isActionable) out += \'<span style="background:#fef3c7;color:#d97706;padding:0.1rem 0.35rem;border-radius:4px;font-size:0.65rem;font-weight:600;margin-right:0.35rem">🔥 ACTIVE</span>\';';
-    html += 'out += \'<span style="font-weight:500;color:#1e3a5f">PO# \' + e.po + \'</span>\';';
+    html += 'out += \'<span style="font-weight:500;color:#1e3a5f"><a href="#" class="zoho-doc-link" data-type="purchaseorder" data-num="\' + escapeHtml(e.po) + \'" style="text-decoration:underline;color:inherit;cursor:pointer" title="Open in Zoho Inventory">PO# \' + e.po + \'</a></span>\';';
     html += 'if (e.color) out += \'<div style="font-size:0.75rem;color:#86868b">\' + e.color + \'</div>\';';
     // Show warehouse date
     html += 'if (e.warehouse) {';
@@ -5259,7 +5314,7 @@ function getHTML() {
     html += 'orders.forEach(function(order, idx) {';
     html += 'var deliveryDate = order.delivery_date ? new Date(order.delivery_date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : "TBD";';
     html += 'html += \'<div class="so-card"><div class="so-header" onclick="toggleSO(\' + idx + \')">\';';
-    html += 'html += \'<div class="so-info"><h3>SO# \' + escapeHtml(order.so_number) + \'</h3><span>\' + escapeHtml(order.customer) + \' · \' + order.line_count + \' items</span></div>\';';
+    html += 'html += \'<div class="so-info"><h3><a href="#" class="zoho-doc-link" data-type="salesorder" data-num="\' + escapeHtml(order.so_number) + \'" style="text-decoration:underline;color:inherit;cursor:pointer" title="Open in Zoho Inventory" onclick="event.stopPropagation()">SO# \' + escapeHtml(order.so_number) + \'</a></h3><span>\' + escapeHtml(order.customer) + \' · \' + order.line_count + \' items</span></div>\';';
     html += 'html += \'<div class="so-meta"><div class="delivery">\' + deliveryDate + \'</div><div class="total">$\' + formatNumber(Math.round(order.total_dollars)) + \'</div></div></div>\';';
     html += 'html += \'<div class="so-items" id="so-items-\' + idx + \'">\';';
     html += 'order.items.forEach(function(item) {';
@@ -6159,7 +6214,7 @@ function getHTML() {
     html += 'var ordersHtml = "";';
     html += 'item.orders.forEach(function(o) {';
     html += 'var date = o.delivery_date ? new Date(o.delivery_date).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "TBD";';
-    html += 'ordersHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">SO# \' + escapeHtml(o.so_number) + \'</div><div class="order-row-customer">\' + escapeHtml(o.customer) + (o.color ? " · " + escapeHtml(o.color) : "") + \'</div></div>\';';
+    html += 'ordersHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so"><a href="#" class="zoho-doc-link" data-type="salesorder" data-num="\' + escapeHtml(o.so_number) + \'" style="text-decoration:underline;color:inherit;cursor:pointer" title="Open in Zoho Inventory">SO# \' + escapeHtml(o.so_number) + \'</a></div><div class="order-row-customer">\' + escapeHtml(o.customer) + (o.color ? " · " + escapeHtml(o.color) : "") + \'</div></div>\';';
     html += 'ordersHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(o.quantity) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
     html += 'document.getElementById("modalOrdersList").innerHTML = ordersHtml;';
     html += 'document.getElementById("styleModal").classList.add("active"); }';
@@ -6216,7 +6271,7 @@ function getHTML() {
     html += 'var isLowPrice = hasPriceVariance && po.po_unit_price === minPrice;';
     html += 'var priceStyle = isHighPrice ? "color:#dc3545;font-weight:700" : (isLowPrice ? "color:#28a745;font-weight:700" : "color:#0088c2;font-weight:600");';
     html += 'var priceIndicator = isHighPrice ? " ▲" : (isLowPrice ? " ▼" : "");';
-    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so">PO# \' + escapeHtml(po.po_number || "-") + (unitPrice ? \' <span style="\' + priceStyle + \'">\' + unitPrice + \'/u\' + priceIndicator + \'</span>\' : "") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
+    html += 'posHtml += \'<div class="order-row"><div class="order-row-left"><div class="order-row-so"><a href="#" class="zoho-doc-link" data-type="purchaseorder" data-num="\' + escapeHtml(po.po_number || "-") + \'" style="text-decoration:underline;color:inherit;cursor:pointer" title="Open in Zoho Inventory">PO# \' + escapeHtml(po.po_number || "-") + \'</a>\' + (unitPrice ? \' <span style="\' + priceStyle + \'">\' + unitPrice + \'/u\' + priceIndicator + \'</span>\' : "") + \'</div><div class="order-row-customer">\' + escapeHtml(po.vendor_name || "Unknown Vendor") + (po.color ? " · " + escapeHtml(po.color) : "") + \'</div></div>\';';
     html += 'posHtml += \'<div class="order-row-right"><div class="order-row-qty">\' + formatNumber(po.po_quantity || 0) + \' units</div><div class="order-row-date">\' + date + \'</div></div></div>\'; });';
     html += '} else { posHtml = \'<div style="color:#86868b;font-size:0.875rem;padding:0.5rem 0">No PO details available</div>\'; }';
     html += 'document.getElementById("modalOrdersList").innerHTML = posHtml;';
@@ -6897,6 +6952,7 @@ function getHTML() {
     html += 'function formatMoney(n) { n = n || 0; if (n >= 1000000) { var m = (n / 1000000).toFixed(1); if (m.endsWith(".0")) m = m.slice(0,-2); return "$" + m + "M"; } return "$" + formatNumber(Math.round(n)); }';
     html += 'function calcGM(item) { var totalQty = 0, weightedMargin = 0; if (item.orders) { item.orders.forEach(function(o) { var sp = o.unit_price || 0; var cp = o.po_unit_price || 0; var qty = o.quantity || 0; if (sp > 0 && cp > 0 && qty > 0) { var margin = ((sp - cp) / sp) * 100; weightedMargin += margin * qty; totalQty += qty; } }); } if (totalQty <= 0) return { value: null, cls: "gm-none", label: "N/A" }; var gm = weightedMargin / totalQty; var cls = gm >= 40 ? "gm-high" : (gm >= 25 ? "gm-mid" : "gm-low"); return { value: gm, cls: cls, label: gm.toFixed(1) + "%" }; }';
     html += 'function escapeHtml(str) { if (!str) return ""; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }';
+    html += 'document.addEventListener("click",function(e){var link=e.target.closest(".zoho-doc-link");if(!link)return;e.preventDefault();var type=link.dataset.type;var num=link.dataset.num;var origText=link.textContent;link.style.opacity="0.5";link.textContent=origText+" ⏳";fetch("/api/zoho-link/"+type+"/"+encodeURIComponent(num)).then(function(r){return r.json()}).then(function(d){link.style.opacity="1";link.textContent=origText;if(d.url)window.open(d.url,"zoho-doc")}).catch(function(){link.style.opacity="1";link.textContent=origText})});';
     html += 'function handleImgError(img, fileId) {';
     html += 'if (!fileId) { img.style.display = "none"; return; }';
     html += 'var btn = document.createElement("button");';
