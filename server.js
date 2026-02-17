@@ -3988,7 +3988,7 @@ function getHTML() {
     html += '<div class="header-right">';
     html += '<button class="btn btn-secondary" onclick="showSettingsModal()">⚙️ Settings</button>';
     html += '<button class="btn btn-secondary" onclick="showUploadModal()">Import CSV</button>';
-    html += '<a href="' + (process.env.PRODUCT_CATALOG_URL || 'https://product-catalog-production-682f.up.railway.app') + '" class="btn btn-secondary" target="_blank">Product Catalog (ATS)</a>';
+    html += '<a href="' + (process.env.PRODUCT_CATALOG_URL || 'https://catalogue.markedwards.cloud') + '" class="btn btn-secondary" target="_blank">Product Catalog (ATS)</a>';
     html += '</div></header>';
 
     // Stats bar
