@@ -1285,12 +1285,11 @@ app.get('/api/orders', async function(req, res) {
             var deptList = departments.split(',').map(d => d.trim()).filter(d => d);
             if (deptList.length > 0) {
                 var deptConditions = deptList.map(function(d) {
-                    return "style_number ~ '^[0-9]+(" + d + ")[-]'";
+                    return "UPPER(SUBSTRING(style_number FROM '^[0-9]+([A-Za-z])')) = '" + d.toUpperCase().replace(/'/g, '') + "'";
                 });
                 conditions.push('(' + deptConditions.join(' OR ') + ')');
             }
         }
-        // Style search (partial match)
         var styleSearch = req.query.styleSearch;
         if (styleSearch) {
             conditions.push('style_number ILIKE $' + paramIndex++);
@@ -1703,12 +1702,15 @@ app.get('/api/filters', async function(req, res) {
             }
         }
 
-        // Department counts - extract letter before dash from style_number
+        // Department counts - extract letter before dash from style_number (e.g., 85887J-AC -> J)
         var departmentsResult = await pool.query(`
-            SELECT SUBSTRING(style_number FROM '^[0-9]+([A-Z])') as dept_code,
-                   COUNT(DISTINCT SUBSTRING(style_number FROM '^[0-9]+[A-Z]')) as style_count
-            FROM order_items
-            WHERE status = 'Open' AND style_number ~ '^[0-9]+[A-Z]-'
+            SELECT dept_code, COUNT(DISTINCT base_style) as style_count FROM (
+                SELECT SUBSTRING(style_number FROM '^[0-9]+([A-Za-z])') as dept_code,
+                       SUBSTRING(style_number FROM '^[0-9]+[A-Za-z]') as base_style
+                FROM order_items
+                WHERE style_number ~ '^[0-9]+[A-Za-z]'
+            ) sub
+            WHERE dept_code IS NOT NULL
             GROUP BY dept_code
             ORDER BY style_count DESC
         `);
@@ -1826,7 +1828,7 @@ app.get('/api/po/orders', async function(req, res) {
             var deptList = departments.split(',').map(d => d.trim()).filter(d => d);
             if (deptList.length > 0) {
                 var deptConditions = deptList.map(function(d) {
-                    return "style_number ~ '^[0-9]+(" + d + ")[-]'";
+                    return "UPPER(SUBSTRING(style_number FROM '^[0-9]+([A-Za-z])')) = '" + d.toUpperCase().replace(/'/g, '') + "'";
                 });
                 conditions.push('(' + deptConditions.join(' OR ') + ')');
             }
