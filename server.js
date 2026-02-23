@@ -1875,7 +1875,7 @@ app.get('/api/po/orders', async function(req, res) {
             FROM unique_pos
             GROUP BY style_number, style_name, commodity, image_url
             ORDER BY SUM(po_total) DESC
-            LIMIT 500
+            LIMIT 3000
         `;
         var itemsResult = await pool.query(query, params);
 
