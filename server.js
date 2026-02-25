@@ -276,10 +276,22 @@ async function syncFromZohoAnalytics() {
         po_unit_price: findCol(['po_price', 'po_unit_price', 'po_price_fcy']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
         po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative', 'person_name', 'assigned_to', 'rep_name'])
     };
 
     console.log('Column mapping:', mapping);
+
+    // Fuzzy fallback for salesperson - search headers for any column containing 'salesperson'
+    if (mapping.salesperson === -1) {
+        for (var si = 0; si < columns.length; si++) {
+            var h = columns[si].toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (h.includes('salesperson') || h.includes('salesman') || (h.includes('sales') && h.includes('person'))) {
+                mapping.salesperson = si;
+                console.log('Fuzzy matched salesperson column at index ' + si + ': ' + columns[si]);
+                break;
+            }
+        }
+    }
 
     if (mapping.so_number === -1 || mapping.customer === -1 || mapping.style_number === -1) {
         return { success: false, error: 'Missing required columns. Found columns: ' + columns.join(', ') };
@@ -628,11 +640,24 @@ async function syncFromWorkDriveFolder(force) {
         po_unit_price: findCol(['po_price_fcy', 'po_unit_price', 'po_rate']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
         po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative', 'person_name', 'assigned_to', 'rep_name'])
     };
 
     console.log('CSV Headers:', headers);
     console.log('Column mapping:', JSON.stringify(mapping));
+
+    // Fuzzy fallback for salesperson - search for any header containing 'salesperson' or 'sales_person'
+    if (mapping.salesperson === null || mapping.salesperson === -1 || mapping.salesperson === undefined) {
+        for (var si = 0; si < headers.length; si++) {
+            var h = headers[si].toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (h.includes('salesperson') || h.includes('salesman') || (h.includes('sales') && h.includes('person'))) {
+                mapping.salesperson = si;
+                console.log('Fuzzy matched salesperson column at index ' + si + ': ' + headers[si]);
+                break;
+            }
+        }
+    }
+    console.log('Final salesperson mapping:', mapping.salesperson);
 
     // Track SO+style+color combos to prevent double-counting SO quantities
     // The PO-SO Query CSV has one row per PO line, so the same SO quantity appears multiple times
@@ -710,9 +735,9 @@ async function syncFromWorkDriveFolder(force) {
         }
     }
 
-    // Log import with filename in error_message field (for tracking)
+    // Log import with filename and headers in error_message field (for tracking)
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
-        ['workdrive_sync', 'success', imported, fileName]);
+        ['workdrive_sync', 'success', imported, fileName + ' | Headers: ' + headers.join(',')]);
 
     // Report freshness to admin panel
     await reportDataFreshness('Open Orders', imported, 'WorkDrive sync: ' + fileName);
@@ -805,8 +830,22 @@ async function syncImportPOsFromWorkDrive(force) {
         po_status: findCol(['po_status', 'status', 'order_status']),
         image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
         customer: findCol(['customer', 'customer_name', 'client']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative', 'person_name', 'assigned_to', 'rep_name'])
     };
+
+    console.log('Import PO column mapping:', mapping);
+
+    // Fuzzy fallback for salesperson
+    if (mapping.salesperson === null || mapping.salesperson === -1 || mapping.salesperson === undefined) {
+        for (var si = 0; si < headers.length; si++) {
+            var h = headers[si].toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (h.includes('salesperson') || h.includes('salesman') || (h.includes('sales') && h.includes('person'))) {
+                mapping.salesperson = si;
+                console.log('Fuzzy matched salesperson column at index ' + si + ': ' + headers[si]);
+                break;
+            }
+        }
+    }
 
     // Process rows
     var imported = 0;
@@ -925,7 +964,7 @@ async function syncImportPOsFromWorkDrive(force) {
 
     // Log import
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
-        ['import_po_sync', 'success', imported + updated, fileName]);
+        ['import_po_sync', 'success', imported + updated, fileName + ' | Headers: ' + headers.join(',')]);
 
     console.log('Import PO sync complete: ' + imported + ' inserted, ' + updated + ' updated from ' + fileName);
     return { success: true, imported: imported, updated: updated, total: imported + updated, fileName: fileName, errors: errors };
@@ -2614,10 +2653,22 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
             po_unit_price: findColumn(headers, ['po_price_fcy', 'po_unit_price', 'po_price']),
             po_total: findColumn(headers, ['po_total_fcy', 'po_total', 'po_amount']),
             po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse']),
-            salesperson: findColumn(headers, ['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
+            salesperson: findColumn(headers, ['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative', 'person_name', 'assigned_to', 'rep_name'])
         };
 
         console.log('Column mapping:', colMap);
+
+        // Fuzzy fallback for salesperson
+        if (colMap.salesperson === -1) {
+            for (var si = 0; si < headers.length; si++) {
+                var h = headers[si].replace(/[^a-z0-9]/g, '');
+                if (h.includes('salesperson') || h.includes('salesman') || (h.includes('sales') && h.includes('person'))) {
+                    colMap.salesperson = si;
+                    console.log('Fuzzy matched salesperson column at index ' + si + ': ' + headers[si]);
+                    break;
+                }
+            }
+        }
 
         // Validate required columns
         if (colMap.so_number === -1) return res.status(400).json({ error: 'Missing required column: SO Number' });
@@ -2726,8 +2777,8 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
         `);
 
         // Log import
-        await pool.query('INSERT INTO import_history (import_type, status, records_imported) VALUES ($1, $2, $3)',
-            ['csv', 'success', imported]);
+        await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
+            ['csv', 'success', imported, 'Headers: ' + headers.join(',')]);
 
         // Get validation stats for the response
         var validationStats = await pool.query(`
@@ -3495,6 +3546,61 @@ app.post('/api/trigger-export', async function(req, res) {
     } catch (err) {
         console.error('Trigger export error:', err);
         res.json({ success: false, error: err.message });
+    }
+});
+
+// Debug endpoint to check salesperson data
+app.get('/api/debug/salesperson', async function(req, res) {
+    try {
+        // Check if salesperson column exists
+        var colCheck = await pool.query(`
+            SELECT column_name, data_type FROM information_schema.columns 
+            WHERE table_name = 'order_items' AND column_name = 'salesperson'
+        `);
+        
+        // Count rows with salesperson data
+        var counts = await pool.query(`
+            SELECT 
+                COUNT(*) as total_rows,
+                COUNT(NULLIF(salesperson, '')) as rows_with_salesperson,
+                COUNT(NULLIF(customer, '')) as rows_with_customer
+            FROM order_items
+        `);
+        
+        // Sample salesperson values
+        var samples = await pool.query(`
+            SELECT DISTINCT salesperson, COUNT(*) as cnt 
+            FROM order_items 
+            WHERE salesperson IS NOT NULL AND salesperson != '' 
+            GROUP BY salesperson 
+            ORDER BY cnt DESC 
+            LIMIT 20
+        `);
+        
+        // Check what columns exist
+        var allCols = await pool.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'order_items' 
+            ORDER BY ordinal_position
+        `);
+        
+        // Get last import headers from log
+        var lastImport = await pool.query(`
+            SELECT import_type, error_message, created_at, records_imported 
+            FROM import_history 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        `);
+        
+        res.json({
+            column_exists: colCheck.rows.length > 0,
+            counts: counts.rows[0],
+            salesperson_values: samples.rows,
+            all_columns: allCols.rows.map(r => r.column_name),
+            recent_imports: lastImport.rows
+        });
+    } catch (err) {
+        res.json({ error: err.message });
     }
 });
 
