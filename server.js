@@ -275,7 +275,8 @@ async function syncFromZohoAnalytics() {
         po_quantity: findCol(['po_quantity', 'po_qty']),
         po_unit_price: findCol(['po_price', 'po_unit_price', 'po_price_fcy']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
-        po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date'])
+        po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date']),
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
     };
 
     console.log('Column mapping:', mapping);
@@ -337,12 +338,13 @@ async function syncFromZohoAnalytics() {
             var poUnitPrice = getNumber(mapping.po_unit_price);
             var poTotal = getNumber(mapping.po_total);
             var poWarehouseDate = getDate(mapping.po_warehouse_date);
+            var salesperson = getValue(mapping.salesperson) || '';
 
             // Insert into order_items
             await pool.query(`
-                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
+                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date, salesperson)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate, salesperson]);
 
             imported++;
         } catch (err) {
@@ -625,7 +627,8 @@ async function syncFromWorkDriveFolder(force) {
         po_quantity: findCol(['po_quantity', 'po_qty']),
         po_unit_price: findCol(['po_price_fcy', 'po_unit_price', 'po_rate']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
-        po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta'])
+        po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta']),
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
     };
 
     console.log('CSV Headers:', headers);
@@ -681,6 +684,7 @@ async function syncFromWorkDriveFolder(force) {
             var poUnitPrice = getNumber(mapping.po_unit_price);
             var poTotal = getNumber(mapping.po_total);
             var poWarehouseDate = getDate(mapping.po_warehouse_date);
+            var salesperson = getValue(mapping.salesperson) || '';
 
             // Dedup: only count SO quantity/total on first occurrence of SO+style+color
             // This prevents double-counting when the PO-SO join creates multiple rows per SO line
@@ -695,9 +699,9 @@ async function syncFromWorkDriveFolder(force) {
             }
 
             await pool.query(`
-                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
+                INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date, salesperson)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate, salesperson]);
 
             imported++;
         } catch (err) {
@@ -800,10 +804,9 @@ async function syncImportPOsFromWorkDrive(force) {
         po_warehouse_date: findCol(['po_warehouse_date', 'warehouse_date', 'eta', 'delivery_date', 'expected_date']),
         po_status: findCol(['po_status', 'status', 'order_status']),
         image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
-        customer: findCol(['customer', 'customer_name', 'client'])
+        customer: findCol(['customer', 'customer_name', 'client']),
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
     };
-
-    console.log('Import PO column mapping:', mapping);
 
     // Process rows
     var imported = 0;
@@ -861,6 +864,7 @@ async function syncImportPOsFromWorkDrive(force) {
             var poStatus = getValue(mapping.po_status) || 'Open';
             var imageUrl = getValue(mapping.image_url);
             var customer = getValue(mapping.customer);
+            var salesperson = getValue(mapping.salesperson) || '';
 
             // Skip rows without required data
             if (!poNumber || !styleNumber) {
@@ -900,17 +904,18 @@ async function syncImportPOsFromWorkDrive(force) {
                         po_warehouse_date = COALESCE($7, po_warehouse_date),
                         po_status = COALESCE(NULLIF($8, ''), po_status),
                         image_url = COALESCE(NULLIF($9, ''), image_url),
-                        customer = COALESCE(NULLIF($10, ''), customer)
+                        customer = COALESCE(NULLIF($10, ''), customer),
+                        salesperson = COALESCE(NULLIF($14, ''), salesperson)
                     WHERE po_number = $11 AND style_number = $12 AND (color = $13 OR (color IS NULL AND $13 IS NULL))
-                `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
+                `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null, salesperson]);
                 updated++;
             } else {
                 // Insert new - use "IMP-" prefix for so_number since Import POs may not have a sales order
                 var soNumber = 'IMP-' + poNumber;
                 await pool.query(`
-                    INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'Open')
-                `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer]);
+                    INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, salesperson, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Open')
+                `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, parsedDate, poStatus, imageUrl, customer, salesperson]);
                 imported++;
             }
         } catch (rowErr) {
@@ -1018,12 +1023,17 @@ async function initDB() {
             po_unit_price DECIMAL(10,2) DEFAULT 0,
             po_total DECIMAL(12,2) DEFAULT 0,
             po_warehouse_date DATE,
+            salesperson VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`);
 
+        // Add salesperson column if missing (migration for existing DBs)
+        await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS salesperson VARCHAR(255)`);
+
         // Indexes for fast filtering
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_customer ON order_items(customer)');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_salesperson ON order_items(salesperson)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_delivery ON order_items(delivery_date)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_commodity ON order_items(commodity)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status)');
@@ -1842,7 +1852,7 @@ app.get('/api/po/orders', async function(req, res) {
             WITH unique_pos AS (
                 SELECT DISTINCT ON (po_number, style_number)
                     id, po_number, style_number, style_name, commodity, image_url, color,
-                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price
+                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price, customer, salesperson
                 FROM order_items
                 ${whereClause}
                 ORDER BY po_number, style_number, id
@@ -1867,7 +1877,9 @@ app.get('/api/po/orders', async function(req, res) {
                     'po_total', po_total,
                     'po_status', po_status,
                     'po_warehouse_date', po_warehouse_date,
-                    'unit_price', unit_price
+                    'unit_price', unit_price,
+                    'customer', customer,
+                    'salesperson', salesperson
                 ) ORDER BY po_warehouse_date, po_number) as pos,
                 SUM(po_quantity) as total_qty,
                 SUM(po_total) as total_dollars,
@@ -2598,7 +2610,8 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
             po_quantity: findColumn(headers, ['po_quantity', 'po_qty']),
             po_unit_price: findColumn(headers, ['po_price_fcy', 'po_unit_price', 'po_price']),
             po_total: findColumn(headers, ['po_total_fcy', 'po_total', 'po_amount']),
-            po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse'])
+            po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse']),
+            salesperson: findColumn(headers, ['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
         };
 
         console.log('Column mapping:', colMap);
@@ -2659,6 +2672,7 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
                 var poUnitPrice = parseNumber(getValue(values, colMap.po_unit_price)) || 0;
                 var poTotal = parseNumber(getValue(values, colMap.po_total)) || 0;
                 var poWarehouseDate = parseDate(getValue(values, colMap.po_warehouse_date));
+                var salesperson = getValue(values, colMap.salesperson) || '';
 
                 // Normalize SO status - Open, Partial, Invoiced
                 var statusLower = status.toLowerCase();
@@ -2681,9 +2695,9 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
                 }
 
                 await pool.query(`
-                    INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
-                `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate]);
+                    INSERT INTO order_items (so_number, customer, style_number, style_name, commodity, color, quantity, unit_price, total_amount, delivery_date, status, image_url, po_number, vendor_name, po_status, po_quantity, po_unit_price, po_total, po_warehouse_date, salesperson, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+                `, [soNumber, customer, styleNumber, styleName, commodity, color, quantity, unitPrice, totalAmount, deliveryDate, status, imageUrl, poNumber, vendorName, poStatus, poQuantity, poUnitPrice, poTotal, poWarehouseDate, salesperson]);
 
                 imported++;
             } catch (rowErr) {
@@ -3262,6 +3276,7 @@ app.post('/api/webhook/import-po', async function(req, res) {
                 var poStatus = po.po_status || po.status || po.Status || 'Open';
                 var imageUrl = po.image_url || po.image || po.style_image || '';
                 var customer = po.customer || po.Customer || '';
+                var salesperson = po.salesperson || po.Salesperson || po.sales_person || '';
 
                 // Calculate total if not provided but we have qty and price
                 if (!poTotal && poQuantity && poUnitPrice) {
@@ -3303,17 +3318,18 @@ app.post('/api/webhook/import-po', async function(req, res) {
                             po_warehouse_date = COALESCE($7, po_warehouse_date),
                             po_status = COALESCE(NULLIF($8, ''), po_status),
                             image_url = COALESCE(NULLIF($9, ''), image_url),
-                            customer = COALESCE(NULLIF($10, ''), customer)
+                            customer = COALESCE(NULLIF($10, ''), customer),
+                            salesperson = COALESCE(NULLIF($14, ''), salesperson)
                         WHERE po_number = $11 AND style_number = $12 AND (color = $13 OR (color IS NULL AND $13 IS NULL))
-                    `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null]);
+                    `, [vendorName, styleName, commodity, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer, poNumber, styleNumber, color || null, salesperson]);
                     console.log('Updated PO:', poNumber, styleNumber, color);
                 } else {
                     // Insert new - use "IMP-" prefix for so_number since Import POs may not have a sales order
                     var soNumber = 'IMP-' + poNumber;
                     await pool.query(`
-                        INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, status)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'Open')
-                    `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer]);
+                        INSERT INTO order_items (so_number, po_number, vendor_name, style_number, style_name, commodity, color, po_quantity, po_unit_price, po_total, po_warehouse_date, po_status, image_url, customer, salesperson, status)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Open')
+                    `, [soNumber, poNumber, vendorName, styleNumber, styleName, commodity, color, poQuantity, poUnitPrice, poTotal, poWarehouseDate, poStatus, imageUrl, customer, salesperson]);
                     console.log('Inserted PO:', poNumber, styleNumber, color);
                 }
 
@@ -4839,15 +4855,17 @@ function getHTML() {
     html += 'if (!po.po_unit_price && po.po_unit_price !== 0) return;';
     html += 'var key = mode === "base" ? (item.style_number || "").split("-")[0] : (item.style_name || item.style_number);';
     html += 'if (!key) return;';
-    html += 'if (!groups[key]) groups[key] = { style: key, commodity: item.commodity || "-", entries: [], prices: new Set(), vendors: new Set(), totalQty: 0, totalDollars: 0, image: item.image_url, hasActionable: false, actionableQty: 0, actionableDollars: 0 };';
+    html += 'if (!groups[key]) groups[key] = { style: key, commodity: item.commodity || "-", entries: [], prices: new Set(), vendors: new Set(), customers: new Set(), salespersons: new Set(), totalQty: 0, totalDollars: 0, image: item.image_url, hasActionable: false, actionableQty: 0, actionableDollars: 0 };';
     html += 'var price = parseFloat(po.po_unit_price) || 0;';
     // Check if this PO is within actionable window
     html += 'var warehouseDate = po.po_warehouse_date ? new Date(po.po_warehouse_date) : null;';
     html += 'var isActionable = warehouseDate && warehouseDate >= threeMonthsAgo && warehouseDate <= threeMonthsAhead;';
     html += 'if (isActionable) { groups[key].hasActionable = true; groups[key].actionableQty += po.po_quantity || 0; groups[key].actionableDollars += po.po_total || 0; }';
-    html += 'groups[key].entries.push({ vendor: po.vendor_name || "Unknown", po: po.po_number, price: price, qty: po.po_quantity || 0, total: po.po_total || 0, color: po.color || "", warehouse: po.po_warehouse_date, isActionable: isActionable });';
+    html += 'groups[key].entries.push({ vendor: po.vendor_name || "Unknown", po: po.po_number, price: price, qty: po.po_quantity || 0, total: po.po_total || 0, color: po.color || "", warehouse: po.po_warehouse_date, isActionable: isActionable, customer: po.customer || "", salesperson: po.salesperson || "" });';
     html += 'groups[key].prices.add(price.toFixed(2));';
     html += 'groups[key].vendors.add(po.vendor_name || "Unknown");';
+    html += 'if (po.customer) groups[key].customers.add(po.customer);';
+    html += 'if (po.salesperson) groups[key].salespersons.add(po.salesperson);';
     html += 'groups[key].totalQty += po.po_quantity || 0;';
     html += 'groups[key].totalDollars += po.po_total || 0;';
     html += '}); });';
@@ -4931,6 +4949,8 @@ function getHTML() {
     html += 'out += \'<thead><tr style="background:#f0f4f8;text-align:left">\';';
     html += 'out += \'<th style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">Style</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Commodity</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Salesperson</th>\';';
+    html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f">Customer</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:center">Vendors</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;min-width:180px">Price Range</th>\';';
     html += 'out += \'<th style="padding:0.625rem 0.5rem;font-weight:600;color:#1e3a5f;text-align:right">Variance</th>\';';
@@ -4947,6 +4967,8 @@ function getHTML() {
     html += 'out += \'<tr style="background:\' + rowBg + \';border-left:4px solid \' + borderColor + \';cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\\x27#f0f7ff\\x27" onmouseout="this.style.background=\\x27\' + rowBg + \'\\x27" onclick="var el=this.nextSibling;while(el&&el.classList&&el.classList.contains(\\x27price-detail\\x27)){el.style.display=el.style.display===\\x27none\\x27?\\x27table-row\\x27:\\x27none\\x27;el=el.nextSibling;}">\';';
     html += 'out += \'<td style="padding:0.625rem 1rem;font-weight:600;color:#1e3a5f">\' + g.style + (g.hasActionable && g.variance > 0 ? \' <span title="Actionable - within ±3 months" style="font-size:0.75rem">🔥</span>\' : \'\') + (g.variance > 0 ? \' <span style="color:#ff9500;font-size:0.75rem">⚠️</span>\' : \'\') + \'</td>\';';
     html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73">\' + g.commodity + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73;font-size:0.75rem">\' + Array.from(g.salespersons).join(", ") + \'</td>\';';
+    html += 'out += \'<td style="padding:0.625rem 0.5rem;color:#6e6e73;font-size:0.75rem">\' + Array.from(g.customers).join(", ") + \'</td>\';';
     html += 'out += \'<td style="padding:0.625rem 0.5rem;text-align:center">\' + g.uniqueVendors + \'</td>\';';
     // Price range with visual bar
     html += 'out += \'<td style="padding:0.625rem 0.5rem">\';';
@@ -4993,6 +5015,8 @@ function getHTML() {
     html += '}';
     html += 'out += \'</td>\';';
     html += 'out += \'<td style="padding:0.5rem 0.5rem;font-size:0.8125rem;color:#6e6e73">\' + e.vendor + \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;font-size:0.75rem;color:#86868b">\' + (e.salesperson || \'\') + \'</td>\';';
+    html += 'out += \'<td style="padding:0.5rem 0.5rem;font-size:0.75rem;color:#86868b">\' + (e.customer || \'\') + \'</td>\';';
     html += 'out += \'<td style="padding:0.5rem 0.5rem;text-align:center"></td>\';';
     // Price with position indicator
     html += 'out += \'<td style="padding:0.5rem 0.5rem">\';';
