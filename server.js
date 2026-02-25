@@ -737,7 +737,10 @@ async function syncFromWorkDriveFolder(force) {
 
     // Log import with filename and headers in error_message field (for tracking)
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
-        ['workdrive_sync', 'success', imported, fileName + ' | Headers: ' + headers.join(',')]);
+        ['workdrive_sync', 'success', imported, fileName]);
+    // Also log headers for debugging
+    await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
+        ['workdrive_sync_headers', 'info', 0, 'Headers: ' + headers.join(',')]);
 
     // Report freshness to admin panel
     await reportDataFreshness('Open Orders', imported, 'WorkDrive sync: ' + fileName);
@@ -964,7 +967,10 @@ async function syncImportPOsFromWorkDrive(force) {
 
     // Log import
     await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
-        ['import_po_sync', 'success', imported + updated, fileName + ' | Headers: ' + headers.join(',')]);
+        ['import_po_sync', 'success', imported + updated, fileName]);
+    // Also log headers for debugging
+    await pool.query('INSERT INTO import_history (import_type, status, records_imported, error_message) VALUES ($1, $2, $3, $4)',
+        ['import_po_sync_headers', 'info', 0, 'Headers: ' + headers.join(',')]);
 
     console.log('Import PO sync complete: ' + imported + ' inserted, ' + updated + ' updated from ' + fileName);
     return { success: true, imported: imported, updated: updated, total: imported + updated, fileName: fileName, errors: errors };
@@ -3604,6 +3610,102 @@ app.get('/api/debug/salesperson', async function(req, res) {
     }
 });
 
+// Enrich salesperson data from Zoho Books API
+// Fetches salesperson for all SO numbers that don't have one yet
+app.post('/api/enrich/salesperson', async function(req, res) {
+    try {
+        if (!zohoAccessToken) await refreshZohoToken();
+        if (!zohoAccessToken) return res.json({ success: false, error: 'No Zoho token. Connect Zoho first.' });
+
+        var orgId = process.env.ZOHO_BOOKS_ORG_ID || '677681121';
+        
+        // Get unique SO numbers that don't have salesperson
+        var soResult = await pool.query(`
+            SELECT DISTINCT so_number FROM order_items 
+            WHERE (salesperson IS NULL OR salesperson = '') 
+            AND so_number NOT LIKE 'IMP-%'
+            AND so_number IS NOT NULL AND so_number != ''
+            LIMIT 200
+        `);
+        
+        var soNumbers = soResult.rows.map(r => r.so_number);
+        console.log('Enriching salesperson for ' + soNumbers.length + ' SOs');
+        
+        var updated = 0;
+        var errors = [];
+        var salespersonCache = {};
+        
+        for (var i = 0; i < soNumbers.length; i++) {
+            var soNum = soNumbers[i];
+            try {
+                // Search Zoho Books for this SO
+                var searchUrl = 'https://www.zohoapis.com/books/v3/salesorders?organization_id=' + orgId + '&salesorder_number=' + encodeURIComponent(soNum);
+                var response = await fetch(searchUrl, {
+                    headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                });
+                
+                if (response.status === 401) {
+                    await refreshZohoToken();
+                    response = await fetch(searchUrl, {
+                        headers: { 'Authorization': 'Zoho-oauthtoken ' + zohoAccessToken }
+                    });
+                }
+                
+                if (response.status === 429) {
+                    console.log('Rate limited at SO #' + i + ', stopping');
+                    break;
+                }
+                
+                var data = await response.json();
+                var orders = data.salesorders || [];
+                var match = orders.find(function(o) { return o.salesorder_number === soNum; });
+                
+                if (match && match.salesperson_name) {
+                    salespersonCache[soNum] = match.salesperson_name;
+                    await pool.query(
+                        'UPDATE order_items SET salesperson = $1 WHERE so_number = $2 AND (salesperson IS NULL OR salesperson = \'\')',
+                        [match.salesperson_name, soNum]
+                    );
+                    updated++;
+                }
+                
+                // Rate limit: ~2 requests per second
+                if (i < soNumbers.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } catch (soErr) {
+                errors.push({ so: soNum, error: soErr.message });
+            }
+        }
+        
+        // Also update IMP- rows by matching style_number to rows that now have salesperson
+        var impUpdate = await pool.query(`
+            UPDATE order_items imp SET salesperson = src.salesperson
+            FROM (
+                SELECT DISTINCT style_number, salesperson 
+                FROM order_items 
+                WHERE salesperson IS NOT NULL AND salesperson != '' AND so_number NOT LIKE 'IMP-%'
+            ) src
+            WHERE imp.style_number = src.style_number 
+            AND imp.so_number LIKE 'IMP-%'
+            AND (imp.salesperson IS NULL OR imp.salesperson = '')
+        `);
+        
+        console.log('Enrichment complete: ' + updated + ' SOs updated, ' + (impUpdate.rowCount || 0) + ' IMP rows updated');
+        
+        res.json({ 
+            success: true, 
+            so_count: soNumbers.length,
+            updated: updated,
+            imp_rows_updated: impUpdate.rowCount || 0,
+            errors: errors.slice(0, 10)
+        });
+    } catch (err) {
+        console.error('Salesperson enrichment error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // Debug endpoint to check date data
 app.get('/api/debug/dates', async function(req, res) {
     try {
@@ -5042,6 +5144,11 @@ function getHTML() {
     html += 'out += \'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">\';';
     html += 'out += \'<div><h3 style="margin:0;color:#1e3a5f">💰 Price Compare</h3>\';';
     html += 'out += \'<p style="margin:0.25rem 0 0;color:#86868b;font-size:0.8125rem">Click any row to see PO details · 🔥 = within ±3 months (actionable)</p></div>\';';
+    // Check if any salesperson data exists, show fetch button if not
+    html += 'var hasSalesperson = displayList.some(function(g) { return g.salespersons && g.salespersons.size > 0; });';
+    html += 'if (!hasSalesperson) {';
+    html += 'out += \'<button id="fetchSalespersonBtn" onclick="(async function(){var btn=document.getElementById(\\\\x27fetchSalespersonBtn\\\\x27);btn.disabled=true;btn.textContent=\\\\x27Fetching from Zoho...(may take a minute)\\\\x27;try{var r=await fetch(\\\\x27/api/enrich/salesperson\\\\x27,{method:\\\\x27POST\\\\x27});var d=await r.json();if(d.success){btn.textContent=\\\\x27✓ Updated \\\\x27+d.updated+\\\\x27 orders. Refreshing...\\\\x27;setTimeout(function(){location.reload()},1500);}else{btn.textContent=\\\\x27Error: \\\\x27+d.error;}}catch(e){btn.textContent=\\\\x27Error: \\\\x27+e.message;}})()" style="padding:0.4rem 1rem;border:1px solid #6366f1;border-radius:980px;cursor:pointer;font-size:0.8125rem;font-weight:500;background:#eef2ff;color:#4f46e5">👤 Fetch Salesperson Data</button>\';';
+    html += '}';
     // Toggle buttons container
     html += 'out += \'<div style="display:flex;gap:0.5rem;flex-wrap:wrap">\';';
     // Actionable Only toggle
