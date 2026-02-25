@@ -276,7 +276,7 @@ async function syncFromZohoAnalytics() {
         po_unit_price: findCol(['po_price', 'po_unit_price', 'po_price_fcy']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
         po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
     };
 
     console.log('Column mapping:', mapping);
@@ -628,7 +628,7 @@ async function syncFromWorkDriveFolder(force) {
         po_unit_price: findCol(['po_price_fcy', 'po_unit_price', 'po_rate']),
         po_total: findCol(['po_total_fcy', 'po_total', 'po_amount']),
         po_warehouse_date: findCol(['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
     };
 
     console.log('CSV Headers:', headers);
@@ -805,7 +805,7 @@ async function syncImportPOsFromWorkDrive(force) {
         po_status: findCol(['po_status', 'status', 'order_status']),
         image_url: findCol(['style_image', 'image_url', 'image', 'workdrive_link']),
         customer: findCol(['customer', 'customer_name', 'client']),
-        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
+        salesperson: findCol(['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
     };
 
     // Process rows
@@ -1848,14 +1848,17 @@ app.get('/api/po/orders', async function(req, res) {
 
         // CTE to deduplicate PO lines - same PO can appear on multiple sales orders
         // Unique PO line = po_number + style_number + color
+        // Order by: prefer rows with salesperson data, then customer data, then by id
         var deduplicatedCTE = `
             WITH unique_pos AS (
                 SELECT DISTINCT ON (po_number, style_number)
                     id, po_number, style_number, style_name, commodity, image_url, color,
-                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price, customer, salesperson
+                    vendor_name, po_quantity, po_unit_price, po_total, po_status, po_warehouse_date, unit_price,
+                    COALESCE(NULLIF(customer, ''), (SELECT oi2.customer FROM order_items oi2 WHERE oi2.style_number = order_items.style_number AND oi2.customer IS NOT NULL AND oi2.customer != '' LIMIT 1)) as customer,
+                    COALESCE(NULLIF(salesperson, ''), (SELECT oi3.salesperson FROM order_items oi3 WHERE oi3.style_number = order_items.style_number AND oi3.salesperson IS NOT NULL AND oi3.salesperson != '' LIMIT 1)) as salesperson
                 FROM order_items
                 ${whereClause}
-                ORDER BY po_number, style_number, id
+                ORDER BY po_number, style_number, (CASE WHEN salesperson IS NOT NULL AND salesperson != '' THEN 0 ELSE 1 END), (CASE WHEN customer IS NOT NULL AND customer != '' THEN 0 ELSE 1 END), id
             )
         `;
 
@@ -2611,7 +2614,7 @@ app.post('/api/import', upload.single('file'), async function(req, res) {
             po_unit_price: findColumn(headers, ['po_price_fcy', 'po_unit_price', 'po_price']),
             po_total: findColumn(headers, ['po_total_fcy', 'po_total', 'po_amount']),
             po_warehouse_date: findColumn(headers, ['in_warehouse_date', 'po_warehouse_date', 'warehouse_date', 'eta_warehouse']),
-            salesperson: findColumn(headers, ['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'rep', 'cf_salesperson'])
+            salesperson: findColumn(headers, ['salesperson', 'salesperson_name', 'sales_person', 'sales_rep', 'cf_salesperson', 'so_salesperson', 'salesperson_id', 'sales_representative'])
         };
 
         console.log('Column mapping:', colMap);
